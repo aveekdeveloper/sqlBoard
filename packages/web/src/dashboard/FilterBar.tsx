@@ -7,12 +7,16 @@ export default function FilterBar({
   filters,
   values,
   onChange,
+  onClearAll,
 }: {
   filters: ManifestFilter[];
   values: Record<string, FilterValue>;
   onChange: (name: string, value: FilterValue) => void;
+  onClearAll?: () => void;
 }) {
   if (filters.length === 0) return null;
+
+  const hasValue = filters.some((filter) => values[filter.name] !== null && values[filter.name] !== undefined);
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-3 shadow-card">
@@ -24,6 +28,15 @@ export default function FilterBar({
           onChange={(value) => onChange(filter.name, value)}
         />
       ))}
+      {hasValue && onClearAll && (
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="rounded-md border border-line bg-paper px-2.5 py-1 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+        >
+          Clear all
+        </button>
+      )}
     </div>
   );
 }
@@ -44,7 +57,7 @@ function FilterControl({
   useEffect(() => {
     if (filter.values && filter.values.length > 0) {
       setOptions(filter.values);
-      if (value === undefined) onChange(filter.defaultValue ?? filter.values[0] ?? null);
+      if (value === undefined) onChange(filter.defaultValue ?? null);
       return;
     }
     if (!filter.sql || !filter.connectionId) return;
@@ -61,7 +74,7 @@ function FilterControl({
         const opts = rows.map((row: any) => String(row?.[firstCol] ?? '')).filter(Boolean);
         setOptions(opts);
         if (value === undefined) {
-          onChange(filter.defaultValue ?? opts[0] ?? null);
+          onChange(filter.defaultValue ?? null);
         }
       })
       .catch((err: any) => {
@@ -100,6 +113,17 @@ function FilterControl({
           {filter.name}
         </span>
         <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              value === null
+                ? 'bg-ink text-surface'
+                : 'border border-line bg-surface text-ink-soft hover:border-line-strong hover:text-ink'
+            }`}
+          >
+            All
+          </button>
           {options.map((option) => {
             const active = value === option;
             return (
@@ -131,7 +155,7 @@ function FilterControl({
           value={Array.isArray(value) ? (value as string[]) : []}
           onChange={(event) => {
             const selected = [...event.target.selectedOptions].map((option) => option.value);
-            onChange(selected);
+            onChange(selected.length === 0 ? null : selected);
           }}
           className="focus-ring rounded-md border border-line bg-surface px-2 py-1 text-[12px] text-ink"
         >
@@ -150,16 +174,16 @@ function FilterControl({
       <span className="font-semibold uppercase tracking-[0.1em]">{filter.name}</span>
       <select
         value={value === null ? '' : String(value ?? '')}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
         className="focus-ring rounded-md border border-line bg-surface px-2 py-1 text-[12px] text-ink"
       >
+        <option value="">All</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
         ))}
       </select>
-      <span className="text-[10px] text-ink-faint">{formatFilterValue(value)}</span>
     </label>
   );
 }

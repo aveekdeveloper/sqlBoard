@@ -101,13 +101,13 @@ export function dashboardToDoc(
     name: string;
     description: string | null;
     items: DashboardItemDto[];
-    filters?: ManifestFilter[];
+    filters?: ManifestFilter[] | Record<string, unknown>[];
   },
 ): DashboardDoc {
   return {
     name: dashboard.name,
     description: dashboard.description,
-    filters: dashboard.filters ?? [],
+    filters: (dashboard.filters ?? []) as ManifestFilter[],
     items: dashboard.items.map((item) => ({
       id: item.id,
       title: item.title,

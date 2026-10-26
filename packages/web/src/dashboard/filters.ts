@@ -27,7 +27,7 @@ export function extractFilterRefs(sql: string): string[] {
 }
 
 export function formatFilterValue(value: FilterValue): string {
-  if (value === null) return '(all)';
-  if (Array.isArray(value)) return value.length === 0 ? '(all)' : value.join(', ');
+  if (value === null) return 'All';
+  if (Array.isArray(value)) return value.length === 0 ? 'All' : value.join(', ');
   return String(value);
 }

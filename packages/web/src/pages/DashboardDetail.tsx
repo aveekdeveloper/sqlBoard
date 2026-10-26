@@ -347,7 +347,7 @@ export default function DashboardDetail() {
         const response = await api.dashboards.applyState(dashboardId, {
           name: doc.name.trim(),
           description: doc.description,
-          filters: doc.filters ?? [],
+          filters: (doc.filters ?? []) as any,
           items,
           message: message ?? (kind === 'manual' ? `Commit ${doc.name}` : 'Apply dashboard code'),
           kind,
@@ -761,6 +761,7 @@ export default function DashboardDetail() {
                       filters={doc.filters}
                       values={filterValues}
                       onChange={(name, value) => setFilterValues((current) => ({ ...current, [name]: value }))}
+                      onClearAll={() => setFilterValues({})}
                     />
                   </div>
                 ) : null}
