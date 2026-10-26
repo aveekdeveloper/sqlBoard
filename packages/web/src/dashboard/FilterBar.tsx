@@ -6,13 +6,17 @@ import { formatFilterValue, type FilterValue } from './filters.js';
 export default function FilterBar({
   filters,
   values,
+  editing = false,
   onChange,
   onClearAll,
+  onDelete,
 }: {
   filters: ManifestFilter[];
   values: Record<string, FilterValue>;
+  editing?: boolean;
   onChange: (name: string, value: FilterValue) => void;
   onClearAll?: () => void;
+  onDelete?: (index: number) => void;
 }) {
   if (filters.length === 0) return null;
 
@@ -20,13 +24,24 @@ export default function FilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-3 shadow-card">
-      {filters.map((filter) => (
-        <FilterControl
-          key={filter.name}
-          filter={filter}
-          value={values[filter.name]}
-          onChange={(value) => onChange(filter.name, value)}
-        />
+      {filters.map((filter, index) => (
+        <div key={filter.name} className="flex items-center gap-1">
+          <FilterControl
+            filter={filter}
+            value={values[filter.name]}
+            onChange={(value) => onChange(filter.name, value)}
+          />
+          {editing && onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(index)}
+              className="rounded-md px-1.5 py-1 text-[11px] text-ink-faint hover:text-signal"
+              title="Delete filter"
+            >
+              ×
+            </button>
+          )}
+        </div>
       ))}
       {hasValue && onClearAll && (
         <button

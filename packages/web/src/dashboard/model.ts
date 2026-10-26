@@ -13,7 +13,7 @@ import {
   type MetricFormat,
 } from '@sqlboard/shared';
 
-export type { DashboardBlockType, Layout, ManifestDiagnostic, ManifestItem, MetricFormat };
+export type { DashboardBlockType, Layout, ManifestDiagnostic, ManifestFilter, ManifestItem, MetricFormat };
 
 export interface DashboardDoc {
   name: string;

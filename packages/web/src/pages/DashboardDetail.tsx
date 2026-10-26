@@ -35,6 +35,7 @@ import {
   type DashboardBlockType,
   type DashboardDoc,
   type ManifestDiagnostic,
+  type ManifestFilter,
   type ManifestItem,
 } from '../dashboard/model.js';
 import { BlockCard } from '../dashboard/BlockCard.js';
@@ -45,7 +46,7 @@ import BlockEditor from '../dashboard/BlockEditor.js';
 import CodePanel from '../dashboard/CodePanel.js';
 import CommitDialog from '../dashboard/CommitDialog.js';
 import HistoryDialog from '../dashboard/HistoryDialog.js';
-import { Button, Segmented, Toast, type ToastMessage } from '../dashboard/ui.js';
+import { Button, Dialog, Segmented, Toast, type ToastMessage } from '../dashboard/ui.js';
 
 const Grid = GridLayout.WidthProvider(GridLayout);
 
@@ -281,6 +282,15 @@ export default function DashboardDetail() {
 
   const [mode, setMode] = useState<Mode>('view');
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
+  const [filterEditorOpen, setFilterEditorOpen] = useState(false);
+  const [filterForm, setFilterForm] = useState({
+    name: '',
+    type: 'select',
+    connectionId: 0,
+    sql: '',
+    values: '',
+    defaultValue: '',
+  });
 
   useEffect(() => {
     if (Object.keys(filterValues).length > 0) return;
@@ -520,6 +530,39 @@ export default function DashboardDetail() {
     [editingIndex, doc, manifestConnections, notify],
   );
 
+  const saveFilter = useCallback(() => {
+    if (!filterForm.name.trim()) {
+      notify('Give the filter a name.', 'error');
+      return;
+    }
+    const nextFilter: ManifestFilter = {
+      name: filterForm.name.trim(),
+      type: filterForm.type as ManifestFilter['type'],
+      connectionId: filterForm.connectionId || undefined,
+      sql: filterForm.sql.trim() || undefined,
+      values: filterForm.values
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+      defaultValue: filterForm.defaultValue.trim() || null,
+    };
+    if (nextFilter.values && nextFilter.values.length === 0) delete nextFilter.values;
+    const nextFilters = [...(doc.filters ?? []), nextFilter];
+    setCode(serializeDoc({ ...doc, filters: nextFilters }, manifestConnections, manifestSavedQueries));
+    setFilterEditorOpen(false);
+    setFilterForm({ name: '', type: 'select', connectionId: 0, sql: '', values: '', defaultValue: '' });
+    notify(`Filter "${nextFilter.name}" added to the draft`, 'info');
+  }, [filterForm, doc, manifestConnections, manifestSavedQueries, notify]);
+
+  const deleteFilter = useCallback(
+    (index: number) => {
+      const nextFilters = (doc.filters ?? []).filter((_, i) => i !== index);
+      setCode(serializeDoc({ ...doc, filters: nextFilters }, manifestConnections, manifestSavedQueries));
+      notify('Filter removed from the draft', 'info');
+    },
+    [doc, manifestConnections, manifestSavedQueries, notify],
+  );
+
   const removeBlock = useCallback(
     (index: number) => {
       const item = doc.items[index];
@@ -685,6 +728,14 @@ export default function DashboardDetail() {
               <Code2 size={13} />
               <span className="hidden lg:inline">Code</span>
             </Button>
+            {editing && (
+              <button
+                onClick={() => setFilterEditorOpen(true)}
+                className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+              >
+                <Plus size={12} /> Filter
+              </button>
+            )}
             {editing && <AddBlockMenu onSelect={openAdd} />}
             <Button
               variant="primary"
@@ -776,6 +827,8 @@ export default function DashboardDetail() {
                           Object.fromEntries((doc.filters ?? []).map((filter) => [filter.name, null])),
                         )
                       }
+                      onDelete={deleteFilter}
+                      editing={editing}
                     />
                   </div>
                 ) : null}
@@ -828,7 +881,14 @@ export default function DashboardDetail() {
                   <FilterBar
                     filters={doc.filters}
                     values={filterValues}
+                    editing={editing}
+                    onDelete={deleteFilter}
                     onChange={(name, value) => setFilterValues((current) => ({ ...current, [name]: value }))}
+                    onClearAll={() =>
+                      setFilterValues(
+                        Object.fromEntries((doc.filters ?? []).map((filter) => [filter.name, null])),
+                      )
+                    }
                   />
                 ) : null}
                 {mobileItems.map(({ item, index }) => (
@@ -895,6 +955,93 @@ export default function DashboardDetail() {
         onNotify={(message) => notify(message, 'info')}
       />
 
+      <Dialog
+        open={filterEditorOpen}
+        onClose={() => setFilterEditorOpen(false)}
+        title="Add filter"
+        description="Create a dashboard-level filter. Reference it in block SQL as {FilterName}."
+        width="max-w-lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setFilterEditorOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={saveFilter}>
+              Add filter
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Name</span>
+            <input
+              value={filterForm.name}
+              onChange={(event) => setFilterForm((current) => ({ ...current, name: event.target.value }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+              placeholder="Region"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Type</span>
+            <select
+              value={filterForm.type}
+              onChange={(event) => setFilterForm((current) => ({ ...current, type: event.target.value }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+            >
+              <option value="select">Select</option>
+              <option value="multiselect">Multiselect</option>
+              <option value="tabs">Tabs</option>
+              <option value="buttons">Buttons</option>
+              <option value="date">Date</option>
+              <option value="daterange">Date range</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Connection</span>
+            <select
+              value={filterForm.connectionId || ''}
+              onChange={(event) => setFilterForm((current) => ({ ...current, connectionId: Number(event.target.value) }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+            >
+              <option value="">None (static values)</option>
+              {connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">SQL (optional)</span>
+            <textarea
+              value={filterForm.sql}
+              onChange={(event) => setFilterForm((current) => ({ ...current, sql: event.target.value }))}
+              rows={3}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-ink"
+              placeholder="SELECT DISTINCT region FROM sales ORDER BY region"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Static values (comma-separated)</span>
+            <input
+              value={filterForm.values}
+              onChange={(event) => setFilterForm((current) => ({ ...current, values: event.target.value }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+              placeholder="active, pending, closed"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Default (optional)</span>
+            <input
+              value={filterForm.defaultValue}
+              onChange={(event) => setFilterForm((current) => ({ ...current, defaultValue: event.target.value }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+              placeholder="North"
+            />
+          </label>
+        </div>
+      </Dialog>
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
