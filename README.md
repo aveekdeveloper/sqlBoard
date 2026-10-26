@@ -11,16 +11,35 @@ agents can work with the same analytics environment.
 Status: work in progress (v0.1 development). See the plan notes in this
 repository's history for scope.
 
-## Stack
+## Quick start
 
-| Layer | Choice |
-| --- | --- |
-| Frontend | Vite + React 18 + TypeScript, Tailwind, CodeMirror 6 |
-| Backend | Node 22 + Fastify + TypeScript |
-| Metadata | SQLite (better-sqlite3, WAL mode) |
-| Analytics + cache | DuckDB (read pool, serialized writes) |
-| Visualization | sql-to-flint -> Flint (ECharts / Vega-Lite / Chart.js / Plotly) |
-| Deployment | Single Docker image |
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Seed an admin user (default: admin@example.com / admin)
+DATA_DIR=./data npm run seed -w packages/api
+
+# 3. Start the API
+DATA_DIR=./data SECRET_KEY=change-me npm run dev -w packages/api
+
+# 4. Start the web app (in another terminal)
+npm run dev -w packages/web
+```
+
+Open http://localhost:5173 and log in with `admin@example.com` / `admin`.
+
+## Docker
+
+```bash
+docker compose up
+```
+
+The API listens on port 3001. Seed an admin user by running:
+
+```bash
+docker compose exec sqlboard node packages/api/scripts/seed-admin.cjs
+```
 
 ## License
 

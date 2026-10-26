@@ -11,3 +11,5 @@ uploads/
 *.duckdb.wal
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
