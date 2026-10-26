@@ -370,6 +370,8 @@ export default function DashboardDetail() {
           name: doc.name.trim(),
           description: doc.description,
           filters: (doc.filters ?? []) as any,
+          theme: doc.theme,
+          colors: doc.colors,
           items,
           message: message ?? (kind === 'manual' ? `Commit ${doc.name}` : 'Apply dashboard code'),
           kind,

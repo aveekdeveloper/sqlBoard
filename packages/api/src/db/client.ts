@@ -62,6 +62,8 @@ const BOOTSTRAP_SQL = [
     name TEXT NOT NULL,
     description TEXT,
     filters_json TEXT,
+    theme TEXT,
+    colors_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -131,6 +133,16 @@ export function openDatabase(config: SqlboardConfig): OpenedDatabase {
   }
   try {
     sqlite.exec('ALTER TABLE dashboards ADD COLUMN filters_json TEXT');
+  } catch {
+    // Column already exists.
+  }
+  try {
+    sqlite.exec('ALTER TABLE dashboards ADD COLUMN theme TEXT');
+  } catch {
+    // Column already exists.
+  }
+  try {
+    sqlite.exec('ALTER TABLE dashboards ADD COLUMN colors_json TEXT');
   } catch {
     // Column already exists.
   }

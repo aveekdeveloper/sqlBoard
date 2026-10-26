@@ -60,6 +60,8 @@ export const dashboards = sqliteTable('dashboards', {
   name: text('name').notNull(),
   description: text('description'),
   filtersJson: text('filters_json'),
+  theme: text('theme'),
+  colorsJson: text('colors_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

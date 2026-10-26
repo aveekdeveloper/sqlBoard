@@ -435,6 +435,8 @@ function readDashboard(deps: RouteDeps, id: number): {
       name: row.name,
       description: row.description,
       filters: row.filtersJson ? JSON.parse(row.filtersJson) : [],
+      theme: row.theme ?? undefined,
+      colors: row.colorsJson ? JSON.parse(row.colorsJson) : undefined,
       items: items.map((item) => ({
         id: item.id,
         title: item.title,
@@ -464,6 +466,8 @@ function dashboardResponse(deps: RouteDeps, id: number) {
     name: snapshot.name,
     description: snapshot.description,
     filters: snapshot.filters ?? [],
+    theme: snapshot.theme,
+    colors: snapshot.colors,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     latestVersion,
@@ -562,6 +566,8 @@ function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot)
       name: snapshot.name,
       description: snapshot.description,
       filtersJson: JSON.stringify(snapshot.filters ?? []),
+      theme: snapshot.theme ?? null,
+      colorsJson: snapshot.colors ? JSON.stringify(snapshot.colors) : null,
       updatedAt: now,
     })
     .where(eq(dashboards.id, id))
@@ -787,6 +793,8 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       description:
         parsed.data.description === undefined ? current.description : parsed.data.description,
       filters: current.filters ?? [],
+      theme: parsed.data.theme === undefined ? current.theme : parsed.data.theme,
+      colors: parsed.data.colors === undefined ? current.colors : parsed.data.colors,
       items: parsed.data.items.map((item) => ({
         title: item.title,
         sql: item.sql,
