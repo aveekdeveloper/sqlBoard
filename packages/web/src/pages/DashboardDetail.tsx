@@ -158,18 +158,32 @@ export default function DashboardDetail() {
     queryFn: () => api.connections.list(),
     staleTime: 60_000,
   });
+  const savedQueriesQuery = useQuery({
+    queryKey: ['saved-queries'],
+    queryFn: () => api.savedQueries.list(),
+    staleTime: 60_000,
+  });
 
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const manifestConnections = useMemo(
     () => connections.map((connection) => ({ id: connection.id, name: connection.name })),
     [connections],
   );
+  const manifestSavedQueries = useMemo(
+    () => (savedQueriesQuery.data ?? []).map((query: any) => ({
+      id: query.id,
+      name: query.name,
+      sql: query.sql,
+      connectionId: query.connectionId,
+    })),
+    [savedQueriesQuery.data],
+  );
 
   const dashboard = dashboardQuery.data;
   const serverDoc = useMemo(() => (dashboard ? dashboardToDoc(dashboard) : null), [dashboard]);
   const appliedCode = useMemo(
-    () => (serverDoc ? serializeDoc(serverDoc, manifestConnections) : ''),
-    [serverDoc, manifestConnections],
+    () => (serverDoc ? serializeDoc(serverDoc, manifestConnections, manifestSavedQueries) : ''),
+    [serverDoc, manifestConnections, manifestSavedQueries],
   );
 
   const [code, setCode] = useState('');
@@ -188,7 +202,7 @@ export default function DashboardDetail() {
     if (initRef.current) return;
     if (!serverDoc || !connectionsQuery.data) return;
     initRef.current = true;
-    const canonical = serializeDoc(serverDoc, manifestConnections);
+    const canonical = serializeDoc(serverDoc, manifestConnections, manifestSavedQueries);
     const stored = readDraft(draftKey);
     if (stored && stored.code.trim().length > 0 && stored.code.trim() !== canonical.trim()) {
       setCode(stored.code);
@@ -201,7 +215,7 @@ export default function DashboardDetail() {
 
   const parsed = useMemo(() => {
     try {
-      const result = parseDoc(code, manifestConnections);
+      const result = parseDoc(code, manifestConnections, manifestSavedQueries);
       return { doc: result.doc, diagnostics: result.diagnostics };
     } catch (error) {
       const diagnostic: ManifestDiagnostic = {
@@ -211,7 +225,7 @@ export default function DashboardDetail() {
       };
       return { doc: blankDoc(), diagnostics: [diagnostic] };
     }
-  }, [code, manifestConnections]);
+  }, [code, manifestConnections, manifestSavedQueries]);
 
   const doc = parsed.doc;
   const diagnostics = parsed.diagnostics;
@@ -288,7 +302,7 @@ export default function DashboardDetail() {
     (next: DashboardDetailDto, message: string, tone: ToastTone = 'success') => {
       queryClient.setQueryData(['dashboard', dashboardId], next);
       const nextDoc = dashboardToDoc(next);
-      setCode(serializeDoc(nextDoc, manifestConnections));
+      setCode(serializeDoc(nextDoc, manifestConnections, manifestSavedQueries));
       setRestoredAt(null);
       try {
         localStorage.removeItem(draftKey);
@@ -322,6 +336,7 @@ export default function DashboardDetail() {
           title: item.title.trim() || 'Untitled block',
           sql: item.sql,
           connectionId: item.blockType === 'text' ? 0 : item.connectionId,
+          savedQueryId: item.blockType === 'text' ? null : item.savedQueryId ?? null,
           blockType: item.blockType,
           config: item.config ?? undefined,
           layout: normalizeLayout(item.layout),
@@ -411,7 +426,7 @@ export default function DashboardDetail() {
         });
       }
       const nextDoc = withLayouts(doc, layouts);
-      setCode(serializeDoc(nextDoc, manifestConnections));
+      setCode(serializeDoc(nextDoc, manifestConnections, manifestSavedQueries));
 
       const withIds = attachIds(nextDoc.items, serverDoc.items);
       const updates = withIds.flatMap((item) =>
@@ -440,7 +455,7 @@ export default function DashboardDetail() {
       notify('Fix the manifest errors before formatting.', 'error');
       return;
     }
-    setCode(serializeDoc(doc, manifestConnections));
+    setCode(serializeDoc(doc, manifestConnections, manifestSavedQueries));
     notify('Manifest formatted', 'info');
   }, [errors.length, doc, manifestConnections, notify]);
 
@@ -479,7 +494,7 @@ export default function DashboardDetail() {
     (item: ManifestItem) => {
       const nextDoc =
         editingIndex === null ? appendItem(doc, item) : withItemAt(doc, editingIndex, item);
-      setCode(serializeDoc(nextDoc, manifestConnections));
+      setCode(serializeDoc(nextDoc, manifestConnections, manifestSavedQueries));
       setEditorOpen(false);
       notify(
         editingIndex === null
@@ -496,7 +511,7 @@ export default function DashboardDetail() {
       const item = doc.items[index];
       if (!item) return;
       if (!window.confirm(`Remove "${item.title}" from the draft?`)) return;
-      setCode(serializeDoc(withoutItemAt(doc, index), manifestConnections));
+      setCode(serializeDoc(withoutItemAt(doc, index), manifestConnections, manifestSavedQueries));
       notify(`"${item.title}" removed from the draft`, 'info');
     },
     [doc, manifestConnections, notify],
@@ -811,6 +826,7 @@ export default function DashboardDetail() {
         defaultType={editorType}
         doc={doc}
         connections={connections}
+        savedQueries={manifestSavedQueries}
         onClose={() => setEditorOpen(false)}
         onSave={saveBlock}
       />

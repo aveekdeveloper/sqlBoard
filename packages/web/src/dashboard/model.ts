@@ -5,6 +5,7 @@ import {
   type DashboardItemDto,
   type Layout,
   type ManifestConnection,
+  type ManifestSavedQuery,
   type ManifestDashboard,
   type ManifestDiagnostic,
   type ManifestItem,
@@ -108,6 +109,7 @@ export function dashboardToDoc(
       title: item.title,
       sql: item.sql,
       connectionId: item.connectionId,
+      savedQueryId: item.savedQueryId ?? null,
       blockType: item.blockType,
       config: item.config ?? null,
       layout: normalizeLayout(item.layout),
@@ -115,15 +117,20 @@ export function dashboardToDoc(
   };
 }
 
-export function serializeDoc(doc: DashboardDoc, connections: ManifestConnection[]): string {
-  return serializeDashboardManifest(doc, connections);
+export function serializeDoc(
+  doc: DashboardDoc,
+  connections: ManifestConnection[],
+  savedQueries: ManifestSavedQuery[] = [],
+): string {
+  return serializeDashboardManifest(doc, connections, savedQueries);
 }
 
 export function parseDoc(
   code: string,
   connections: ManifestConnection[],
+  savedQueries: ManifestSavedQuery[] = [],
 ): { doc: DashboardDoc; diagnostics: ManifestDiagnostic[] } {
-  const { dashboard, diagnostics } = parseDashboardManifest(code, connections);
+  const { dashboard, diagnostics } = parseDashboardManifest(code, connections, savedQueries);
   return { doc: dashboard, diagnostics };
 }
 

@@ -5,6 +5,7 @@ import { badRequest, notFound } from '../errors.js';
 import {
   connections,
   savedQueries,
+  savedQueryVersions,
   dashboards,
   dashboardItems,
   dashboardVersions,
@@ -152,6 +153,14 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 }
 
 export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const listVersions = (savedQueryId: number) =>
+    deps.db
+      .select()
+      .from(savedQueryVersions)
+      .where(eq(savedQueryVersions.savedQueryId, savedQueryId))
+      .all()
+      .sort((a, b) => a.version - b.version);
+
   app.get('/api/saved-queries', async () => {
     const rows = deps.db.select().from(savedQueries).all();
     return rows.map((row) => ({
@@ -159,9 +168,30 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       name: row.name,
       connectionId: row.connectionId,
       sql: row.sql,
+      latestVersion: row.latestVersion ?? 0,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
+  });
+
+  app.get('/api/saved-queries/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const rows = deps.db
+      .select()
+      .from(savedQueries)
+      .where(eq(savedQueries.id, Number(id)))
+      .all();
+    if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
+    const row = rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      connectionId: row.connectionId,
+      sql: row.sql,
+      latestVersion: row.latestVersion ?? 0,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   });
 
   app.post('/api/saved-queries', async (request, reply) => {
@@ -177,19 +207,183 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         name: parsed.data.name,
         connectionId: parsed.data.connectionId,
         sql: parsed.data.sql,
+        latestVersion: 1,
         createdAt: now,
         updatedAt: now,
       })
       .returning()
       .get();
+    deps.db
+      .insert(savedQueryVersions)
+      .values({
+        savedQueryId: inserted.id,
+        version: 1,
+        parentVersion: null,
+        message: 'Create saved query',
+        authorId: null,
+        kind: 'manual',
+        sql: parsed.data.sql,
+        createdAt: now,
+      })
+      .run();
     reply.code(201);
     return {
       id: inserted.id,
       name: inserted.name,
       connectionId: inserted.connectionId,
       sql: inserted.sql,
+      latestVersion: inserted.latestVersion ?? 1,
       createdAt: inserted.createdAt,
       updatedAt: inserted.updatedAt,
+    };
+  });
+
+  app.patch('/api/saved-queries/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const parsed = z
+      .object({
+        name: z.string().min(1).optional(),
+        connectionId: z.number().int().optional(),
+        sql: z.string().min(1).optional(),
+        message: z.string().optional(),
+      })
+      .safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid saved query', parsed.error.flatten());
+
+    const rows = deps.db
+      .select()
+      .from(savedQueries)
+      .where(eq(savedQueries.id, Number(id)))
+      .all();
+    if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
+    const current = rows[0];
+
+    const nextSql = parsed.data.sql ?? current.sql;
+    const nextName = parsed.data.name ?? current.name;
+    const nextConnection = parsed.data.connectionId ?? current.connectionId;
+    const changed = nextSql !== current.sql || nextName !== current.name || nextConnection !== current.connectionId;
+
+    const now = new Date().toISOString();
+    deps.db
+      .update(savedQueries)
+      .set({
+        name: nextName,
+        connectionId: nextConnection,
+        sql: nextSql,
+        updatedAt: now,
+        latestVersion: changed ? (current.latestVersion ?? 0) + 1 : (current.latestVersion ?? 0),
+      })
+      .where(eq(savedQueries.id, Number(id)))
+      .run();
+
+    if (changed) {
+      const newVersion = (current.latestVersion ?? 0) + 1;
+      deps.db
+        .insert(savedQueryVersions)
+        .values({
+          savedQueryId: Number(id),
+          version: newVersion,
+          parentVersion: current.latestVersion ?? null,
+          message: parsed.data.message ?? `Update ${nextName}`,
+          authorId: null,
+          kind: 'manual',
+          sql: nextSql,
+          createdAt: now,
+        })
+        .run();
+    }
+
+    const updated = deps.db
+      .select()
+      .from(savedQueries)
+      .where(eq(savedQueries.id, Number(id)))
+      .all()[0];
+    return {
+      id: updated.id,
+      name: updated.name,
+      connectionId: updated.connectionId,
+      sql: updated.sql,
+      latestVersion: updated.latestVersion ?? 0,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
+  });
+
+  app.get('/api/saved-queries/:id/versions', async (request) => {
+    const { id } = request.params as { id: string };
+    const rows = deps.db
+      .select()
+      .from(savedQueries)
+      .where(eq(savedQueries.id, Number(id)))
+      .all();
+    if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
+    const versions = deps.db
+      .select()
+      .from(savedQueryVersions)
+      .where(eq(savedQueryVersions.savedQueryId, Number(id)))
+      .all()
+      .sort((a, b) => a.version - b.version);
+    return versions.map((v) => ({
+      id: v.id,
+      version: v.version,
+      parentVersion: v.parentVersion,
+      message: v.message,
+      kind: v.kind,
+      sql: v.sql,
+      createdAt: v.createdAt,
+    }));
+  });
+
+  app.post('/api/saved-queries/:id/restore/:version', async (request) => {
+    const { id, version } = request.params as { id: string; version: string };
+    const queryRows = deps.db
+      .select()
+      .from(savedQueries)
+      .where(eq(savedQueries.id, Number(id)))
+      .all();
+    if (queryRows.length === 0) throw notFound(`Saved query ${id} not found`);
+    const versionRows = deps.db
+      .select()
+      .from(savedQueryVersions)
+      .where(eq(savedQueryVersions.savedQueryId, Number(id)))
+      .all()
+      .filter((v) => v.version === Number(version));
+    if (versionRows.length === 0) throw notFound(`Version ${version} not found`);
+    const target = versionRows[0];
+    const current = queryRows[0];
+    const now = new Date().toISOString();
+    const newVersion = (current.latestVersion ?? 0) + 1;
+    deps.db
+      .update(savedQueries)
+      .set({ sql: target.sql, updatedAt: now, latestVersion: newVersion })
+      .where(eq(savedQueries.id, Number(id)))
+      .run();
+    deps.db
+      .insert(savedQueryVersions)
+      .values({
+        savedQueryId: Number(id),
+        version: newVersion,
+        parentVersion: current.latestVersion ?? null,
+        message: `Restore v${version}`,
+        authorId: null,
+        kind: 'restore',
+        sql: target.sql,
+        createdAt: now,
+      })
+      .run();
+    const updated = deps.db
+      .select()
+      .from(savedQueries)
+      .where(eq(savedQueries.id, Number(id)))
+      .all()[0];
+    return {
+      id: updated.id,
+      name: updated.name,
+      connectionId: updated.connectionId,
+      sql: updated.sql,
+      latestVersion: updated.latestVersion ?? 0,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
     };
   });
 
@@ -201,6 +395,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       .where(eq(savedQueries.id, Number(id)))
       .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
+    deps.db.delete(savedQueryVersions).where(eq(savedQueryVersions.savedQueryId, Number(id))).run();
     deps.db.delete(savedQueries).where(eq(savedQueries.id, Number(id))).run();
     reply.code(204);
   });
@@ -244,6 +439,7 @@ function readDashboard(deps: RouteDeps, id: number): {
         title: item.title,
         sql: item.sql,
         connectionId: item.connectionId,
+        savedQueryId: item.savedQueryId ?? null,
         blockType: item.blockType as DashboardSnapshot['items'][number]['blockType'],
         config: parseConfig(item.configJson),
         layout: JSON.parse(item.layoutJson),
@@ -275,6 +471,7 @@ function dashboardResponse(deps: RouteDeps, id: number) {
       title: item.title,
       sql: item.sql,
       connectionId: item.connectionId,
+      savedQueryId: item.savedQueryId ?? null,
       blockType: item.blockType,
       config: item.config,
       layout: item.layout,
@@ -377,6 +574,7 @@ function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot)
         title: item.title,
         sql: item.sql,
         connectionId: item.connectionId,
+        savedQueryId: item.savedQueryId ?? null,
         blockType: item.blockType,
         configJson: item.config ? JSON.stringify(item.config) : null,
         layoutJson: JSON.stringify(item.layout),
@@ -589,6 +787,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         title: item.title,
         sql: item.sql,
         connectionId: item.connectionId,
+        savedQueryId: item.savedQueryId ?? null,
         blockType: item.blockType,
         config: item.config ?? null,
         layout: item.layout,

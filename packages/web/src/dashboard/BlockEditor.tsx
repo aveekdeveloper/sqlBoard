@@ -120,6 +120,7 @@ export default function BlockEditor({
   defaultType,
   doc,
   connections,
+  savedQueries = [],
   onClose,
   onSave,
 }: {
@@ -128,12 +129,14 @@ export default function BlockEditor({
   defaultType: DashboardBlockType;
   doc: DashboardDoc;
   connections: Array<{ id: number; name: string }>;
+  savedQueries?: Array<{ id: number; name: string; sql: string; connectionId: number }>;
   onClose: () => void;
   onSave: (item: ManifestItem) => void;
 }) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<DashboardBlockType>('chart');
   const [connectionId, setConnectionId] = useState(0);
+  const [savedQueryId, setSavedQueryId] = useState<number | null>(null);
   const [sql, setSql] = useState('');
   const [markdown, setMarkdown] = useState('');
   const [metric, setMetric] = useState<MetricDraft>(emptyMetric);
@@ -148,6 +151,7 @@ export default function BlockEditor({
     setTitle(base.title);
     setType(base.blockType);
     setConnectionId(base.connectionId || connections[0]?.id || 0);
+    setSavedQueryId(base.savedQueryId ?? null);
     setSql(base.sql);
     setMarkdown(
       String((base.config as { markdown?: string } | null)?.markdown ?? DEFAULT_MARKDOWN),
@@ -179,6 +183,7 @@ export default function BlockEditor({
       title: title.trim() || 'Untitled block',
       blockType: type,
       connectionId: type === 'text' ? 0 : connectionId,
+      savedQueryId: type === 'text' ? null : savedQueryId,
       sql: type === 'text' ? '' : sql,
       config: configFromState(),
       layout: initial?.layout ?? nextLayout(doc, type),
@@ -269,6 +274,7 @@ export default function BlockEditor({
       title: title.trim(),
       blockType: type,
       connectionId: type === 'text' ? 0 : connectionId,
+      savedQueryId: type === 'text' ? null : savedQueryId,
       sql: type === 'text' ? '' : sql,
       config: configFromState(),
       layout: initial?.layout ?? nextLayout(doc, type),
@@ -340,19 +346,44 @@ export default function BlockEditor({
               />
             </Field>
             {type !== 'text' && (
-              <Field label="Connection">
-                <Select
-                  value={connectionId || ''}
-                  onChange={(event) => setConnectionId(Number(event.target.value))}
-                >
-                  <option value="">Select…</option>
-                  {connections.map((connection) => (
-                    <option key={connection.id} value={connection.id}>
-                      {connection.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+              <>
+                <Field label="Connection">
+                  <Select
+                    value={connectionId || ''}
+                    onChange={(event) => setConnectionId(Number(event.target.value))}
+                  >
+                    <option value="">Select…</option>
+                    {connections.map((connection) => (
+                      <option key={connection.id} value={connection.id}>
+                        {connection.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                {savedQueries.length > 0 && (
+                  <Field label="Saved query (optional)">
+                    <Select
+                      value={savedQueryId ?? ''}
+                      onChange={(event) => {
+                        const id = event.target.value ? Number(event.target.value) : null;
+                        setSavedQueryId(id);
+                        const selected = savedQueries.find((q) => q.id === id);
+                        if (selected) {
+                          setConnectionId(selected.connectionId);
+                          setSql(selected.sql);
+                        }
+                      }}
+                    >
+                      <option value="">None</option>
+                      {savedQueries.map((query) => (
+                        <option key={query.id} value={query.id}>
+                          {query.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                )}
+              </>
             )}
           </div>
 

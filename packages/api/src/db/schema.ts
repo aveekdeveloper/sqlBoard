@@ -38,8 +38,21 @@ export const savedQueries = sqliteTable('saved_queries', {
   name: text('name').notNull(),
   connectionId: integer('connection_id').notNull(),
   sql: text('sql').notNull(),
+  latestVersion: integer('latest_version').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+});
+
+export const savedQueryVersions = sqliteTable('saved_query_versions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  savedQueryId: integer('saved_query_id').notNull(),
+  version: integer('version').notNull(),
+  parentVersion: integer('parent_version'),
+  message: text('message'),
+  authorId: integer('author_id'),
+  kind: text('kind').notNull().default('manual'),
+  sql: text('sql').notNull(),
+  createdAt: text('created_at').notNull(),
 });
 
 export const dashboards = sqliteTable('dashboards', {
@@ -56,6 +69,7 @@ export const dashboardItems = sqliteTable('dashboard_items', {
   title: text('title').notNull(),
   sql: text('sql').notNull(),
   connectionId: integer('connection_id').notNull(),
+  savedQueryId: integer('saved_query_id'),
   blockType: text('block_type').notNull().default('chart'),
   configJson: text('config_json'),
   layoutJson: text('layout_json').notNull(),

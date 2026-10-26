@@ -5,6 +5,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
 import * as echarts from 'echarts';
 import { api } from '../api/client.js';
+import HistoryDialog from '../dashboard/HistoryDialog.js';
 
 export default function SqlWorkbench() {
   const [searchParams] = useSearchParams();
@@ -21,12 +22,23 @@ export default function SqlWorkbench() {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [preview, setPreview] = useState<any>(null);
   const [tableFilter, setTableFilter] = useState('');
+  const [savedQueryId, setSavedQueryId] = useState<number | null>(null);
+  const [savedQueryName, setSavedQueryName] = useState('');
+  const [savedQueryVersion, setSavedQueryVersion] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
 
   const { data: connections } = useQuery({
     queryKey: ['connections'],
     queryFn: () => api.connections.list(),
+  });
+
+  const versionsQuery = useQuery({
+    queryKey: ['saved-query-versions', savedQueryId],
+    queryFn: () => api.savedQueries.listVersions(savedQueryId!),
+    enabled: !!savedQueryId && historyOpen,
   });
 
   useEffect(() => {
@@ -39,16 +51,21 @@ export default function SqlWorkbench() {
 
   useEffect(() => {
     const savedId = searchParams.get('saved');
-    if (!savedId) return;
+    if (!savedId) {
+      setSavedQueryId(null);
+      setSavedQueryName('');
+      setSavedQueryVersion(0);
+      return;
+    }
     api.savedQueries
-      .list()
-      .then((queries) => {
-        const q = (queries || []).find((x: any) => String(x.id) === savedId);
-        if (q) {
-          setConnectionId(q.connectionId);
-          setSqlText(q.sql);
-          setStatus(`Loaded saved query "${q.name}".`);
-        }
+      .get(Number(savedId))
+      .then((q: any) => {
+        setConnectionId(q.connectionId);
+        setSqlText(q.sql);
+        setSavedQueryId(q.id);
+        setSavedQueryName(q.name);
+        setSavedQueryVersion(q.latestVersion ?? 0);
+        setStatus(`Loaded saved query "${q.name}".`);
       })
       .catch(() => {});
   }, [searchParams]);
@@ -145,15 +162,78 @@ export default function SqlWorkbench() {
       setStatus('Select a connection first.');
       return;
     }
+
+    if (savedQueryId) {
+      try {
+        const updated = await api.savedQueries.update(savedQueryId, {
+          sql: sqlText,
+          connectionId,
+          message: `Update ${savedQueryName || 'query'}`,
+        });
+        setSavedQueryVersion(updated.latestVersion ?? savedQueryVersion);
+        setStatus(`Saved as v${updated.latestVersion ?? savedQueryVersion}.`);
+      } catch (e: any) {
+        setStatus(e.message);
+      }
+      return;
+    }
+
     const name = prompt('Query name:');
     if (!name) return;
     try {
-      await api.savedQueries.create({ name, connectionId, sql: sqlText });
-      setStatus(`Saved as "${name}".`);
+      const existing = await api.savedQueries.list();
+      const conflict = (existing || []).find((q: any) => q.name === name);
+      if (conflict) {
+        const overwrite = window.confirm(
+          `A saved query named "${name}" already exists. Overwrite it?`,
+        );
+        if (!overwrite) {
+          setStatus(`A saved query named "${name}" already exists.`);
+          return;
+        }
+        const updated = await api.savedQueries.update(conflict.id, {
+          name,
+          connectionId,
+          sql: sqlText,
+          message: `Update ${name}`,
+        });
+        setSavedQueryId(conflict.id);
+        setSavedQueryName(name);
+        setSavedQueryVersion(updated.latestVersion ?? 0);
+        setStatus(`Saved as v${updated.latestVersion ?? 0}.`);
+        return;
+      }
+      const created = await api.savedQueries.create({ name, connectionId, sql: sqlText });
+      setSavedQueryId(created.id);
+      setSavedQueryName(created.name);
+      setSavedQueryVersion(created.latestVersion ?? 1);
+      setStatus(`Saved as "${created.name}" (v${created.latestVersion ?? 1}).`);
     } catch (e: any) {
       setStatus(e.message);
     }
   }
+
+  async function restoreVersion(version: number) {
+    if (!savedQueryId) return;
+    setRestoring(true);
+    try {
+      const updated = await api.savedQueries.restoreVersion(savedQueryId, version);
+      setSqlText(updated.sql);
+      setSavedQueryVersion(updated.latestVersion ?? savedQueryVersion);
+      setStatus(`Restored v${version} as v${updated.latestVersion}.`);
+      setHistoryOpen(false);
+    } catch (e: any) {
+      setStatus(e.message);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  const loadVersionCode = (code: string) => {
+    setSqlText(code);
+    setHistoryOpen(false);
+    setStatus('Version loaded into editor.');
+  };
 
   const filteredTables = useMemo(() => {
     const q = tableFilter.trim().toLowerCase();
@@ -167,7 +247,8 @@ export default function SqlWorkbench() {
   const previewRows = preview?.rows || [];
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-[20px] font-semibold tracking-[-0.015em] text-ink">SQL Workbench</h2>
@@ -231,8 +312,23 @@ export default function SqlWorkbench() {
           >
             Save
           </button>
+          {savedQueryId && (
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+            >
+              History
+            </button>
+          )}
         </div>
       </div>
+
+      {savedQueryId && (
+        <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted">
+          Editing saved query: <span className="font-medium text-ink">{savedQueryName}</span>
+          {savedQueryVersion > 0 && <span className="ml-2 text-ink-faint">v{savedQueryVersion}</span>}
+        </div>
+      )}
 
       {status && (
         <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted">
@@ -435,5 +531,28 @@ first category->series, default bar/line.`}
         </div>
       </div>
     </div>
+
+    <HistoryDialog
+      open={historyOpen}
+      onClose={() => setHistoryOpen(false)}
+      versions={(versionsQuery.data || []).map((v: any) => ({
+        id: v.id,
+        dashboardId: 0,
+        version: v.version,
+        parentVersion: v.parentVersion,
+        message: v.message,
+        authorId: null,
+        kind: v.kind,
+        snapshotJson: '',
+        codeText: v.sql,
+        createdAt: v.createdAt,
+      })) as any}
+      loading={versionsQuery.isLoading}
+      restoring={restoring}
+      onRestore={(version: number) => void restoreVersion(version)}
+      onLoadCode={loadVersionCode}
+      onNotify={(message: string) => setStatus(message)}
+    />
+    </>
   );
 }

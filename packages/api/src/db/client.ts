@@ -41,9 +41,22 @@ const BOOTSTRAP_SQL = [
     name TEXT NOT NULL,
     connection_id INTEGER NOT NULL,
     sql TEXT NOT NULL,
+    latest_version INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS saved_query_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    saved_query_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    parent_version INTEGER,
+    message TEXT,
+    author_id INTEGER,
+    kind TEXT NOT NULL DEFAULT 'manual',
+    sql TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS saved_query_versions_unique ON saved_query_versions (saved_query_id, version)`,
   `CREATE TABLE IF NOT EXISTS dashboards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -57,6 +70,7 @@ const BOOTSTRAP_SQL = [
     title TEXT NOT NULL,
     sql TEXT NOT NULL,
     connection_id INTEGER NOT NULL,
+    saved_query_id INTEGER,
     block_type TEXT NOT NULL DEFAULT 'chart',
     config_json TEXT,
     layout_json TEXT NOT NULL,
@@ -103,6 +117,17 @@ export function openDatabase(config: SqlboardConfig): OpenedDatabase {
   for (const statement of BOOTSTRAP_SQL) sqlite.exec(statement);
 
   const db = drizzle(sqlite);
+
+  try {
+    sqlite.exec('ALTER TABLE saved_queries ADD COLUMN latest_version INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // Column already exists.
+  }
+  try {
+    sqlite.exec('ALTER TABLE dashboard_items ADD COLUMN saved_query_id INTEGER');
+  } catch {
+    // Column already exists.
+  }
 
   const existing = db
     .select({ id: connections.id })

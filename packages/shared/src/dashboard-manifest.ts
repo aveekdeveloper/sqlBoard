@@ -5,11 +5,19 @@ export interface ManifestConnection {
   name: string;
 }
 
+export interface ManifestSavedQuery {
+  id: number;
+  name: string;
+  sql: string;
+  connectionId: number;
+}
+
 export interface ManifestItem {
   id?: number;
   title: string;
   sql: string;
   connectionId: number;
+  savedQueryId?: number | null;
   blockType: DashboardBlockType;
   config: Record<string, unknown> | null;
   layout: Layout;
@@ -220,6 +228,7 @@ function configAnnotations(type: DashboardBlockType, config: Record<string, unkn
 export function serializeDashboardManifest(
   dashboard: ManifestDashboard,
   connections: ManifestConnection[],
+  savedQueries: ManifestSavedQuery[] = [],
 ): string {
   const byId = new Map(connections.map((connection) => [connection.id, connection.name]));
   const lines: string[] = [
@@ -238,6 +247,8 @@ export function serializeDashboardManifest(
     );
     if (item.blockType !== 'text') {
       lines.push(`-- @connection: ${oneLine(connection)}`);
+      const savedQuery = savedQueries.find((query) => query.id === item.savedQueryId);
+      if (savedQuery) lines.push(`-- @saved-query: ${oneLine(savedQuery.name)}`);
     }
     lines.push(...configAnnotations(item.blockType, item.config));
 
@@ -259,6 +270,7 @@ export function serializeDashboardManifest(
 export function parseDashboardManifest(
   code: string,
   connections: ManifestConnection[],
+  savedQueries: ManifestSavedQuery[] = [],
 ): { dashboard: ManifestDashboard; diagnostics: ManifestDiagnostic[] } {
   const diagnostics: ManifestDiagnostic[] = [];
   const lines = code.replace(/\r\n/g, '\n').split('\n');
@@ -282,6 +294,11 @@ export function parseDashboardManifest(
   for (const connection of connections) {
     const key = connection.name.trim().toLowerCase();
     if (!byName.has(key)) byName.set(key, connection);
+  }
+  const savedByName = new Map<string, ManifestSavedQuery>();
+  for (const savedQuery of savedQueries) {
+    const key = savedQuery.name.trim().toLowerCase();
+    if (!savedByName.has(key)) savedByName.set(key, savedQuery);
   }
 
   const items: ManifestItem[] = [];
@@ -367,10 +384,13 @@ export function parseDashboardManifest(
             return !match || !MANIFEST_KEYS.has(match[1].toLowerCase());
           })
         : [];
-    const sql =
+    const savedQueryName = (annotations.savedquery ?? annotations.saved_query)?.trim();
+    const savedQuery = savedQueryName ? savedByName.get(savedQueryName.toLowerCase()) : undefined;
+    let sql =
       type === 'text'
         ? ''
         : [...keptAnnotations, body].join('\n').trim();
+    if (type !== 'text' && savedQuery && !sql.trim()) sql = savedQuery.sql;
 
     if (type !== 'text' && type !== 'chart' && !sql) {
       diagnostics.push({
@@ -383,6 +403,7 @@ export function parseDashboardManifest(
 
     const connectionName = annotations.connection?.trim() ?? '';
     let connectionId = 0;
+    let savedQueryId: number | undefined = savedQuery?.id;
     if (type !== 'text') {
       if (!connectionName) {
         diagnostics.push({
@@ -400,6 +421,20 @@ export function parseDashboardManifest(
             severity: 'error',
             code: 'UNKNOWN_CONNECTION',
             message: `Connection '${connectionName}' was not found (block '${title}').`,
+            block: title,
+          });
+        }
+      }
+      if (savedQueryName) {
+        const resolved = savedByName.get(savedQueryName.toLowerCase());
+        if (resolved) {
+          savedQueryId = resolved.id;
+          if (!connectionName) connectionId = resolved.connectionId;
+        } else {
+          diagnostics.push({
+            severity: 'error',
+            code: 'UNKNOWN_SAVED_QUERY',
+            message: `Saved query '${savedQueryName}' was not found (block '${title}').`,
             block: title,
           });
         }
@@ -434,6 +469,7 @@ export function parseDashboardManifest(
       title,
       sql,
       connectionId,
+      savedQueryId: type === 'text' ? null : savedQueryId ?? null,
       blockType: type,
       config: configFor(type, annotations, markdown),
       layout,

@@ -98,8 +98,14 @@ export const api = {
 
   savedQueries: {
     list: () => request<any[]>('/api/saved-queries'),
+    get: (id: number) => request<any>(`/api/saved-queries/${id}`),
     create: (body: { name: string; connectionId: number; sql: string }) =>
       request<any>('/api/saved-queries', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: { name?: string; connectionId?: number; sql?: string; message?: string }) =>
+      request<any>(`/api/saved-queries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    listVersions: (id: number) => request<any[]>(`/api/saved-queries/${id}/versions`),
+    restoreVersion: (id: number, version: number) =>
+      request<any>(`/api/saved-queries/${id}/restore/${version}`, { method: 'POST' }),
     delete: (id: number) => request<void>(`/api/saved-queries/${id}`, { method: 'DELETE' }),
   },
 

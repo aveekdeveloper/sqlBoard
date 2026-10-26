@@ -210,6 +210,7 @@ export const CreateDashboardItemSchema = z.object({
   sql: z.string(),
   connectionId: z.number().int(),
   blockType: DashboardBlockTypeSchema,
+  savedQueryId: z.number().int().nullable().optional(),
   config: z.record(z.unknown()).optional(),
   layout: LayoutSchema,
 });
@@ -251,6 +252,7 @@ export const DashboardItemDtoSchema = z.object({
   sql: z.string(),
   connectionId: z.number().int(),
   blockType: DashboardBlockTypeSchema,
+  savedQueryId: z.number().int().nullable().optional(),
   config: z.record(z.unknown()).nullable(),
   layout: LayoutSchema,
   createdAt: z.string(),
