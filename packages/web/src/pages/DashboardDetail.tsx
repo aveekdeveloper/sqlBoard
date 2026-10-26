@@ -281,6 +281,16 @@ export default function DashboardDetail() {
 
   const [mode, setMode] = useState<Mode>('view');
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
+
+  useEffect(() => {
+    if (Object.keys(filterValues).length > 0) return;
+    if (!doc.filters || doc.filters.length === 0) return;
+    const initial: Record<string, FilterValue> = {};
+    for (const filter of doc.filters) {
+      initial[filter.name] = (filter.defaultValue as FilterValue) ?? null;
+    }
+    setFilterValues(initial);
+  }, [doc.filters, filterValues]);
   const [codeOpen, setCodeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
@@ -761,7 +771,11 @@ export default function DashboardDetail() {
                       filters={doc.filters}
                       values={filterValues}
                       onChange={(name, value) => setFilterValues((current) => ({ ...current, [name]: value }))}
-                      onClearAll={() => setFilterValues({})}
+                      onClearAll={() =>
+                        setFilterValues(
+                          Object.fromEntries((doc.filters ?? []).map((filter) => [filter.name, null])),
+                        )
+                      }
                     />
                   </div>
                 ) : null}

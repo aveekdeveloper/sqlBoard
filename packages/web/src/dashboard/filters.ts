@@ -8,7 +8,7 @@ export function escapeSqlLiteral(value: string | number | null): string {
 
 export function applyFilters(sql: string, values: Record<string, FilterValue>): string {
   return sql.replace(/\{([A-Za-z0-9_]+)\}/g, (match, name) => {
-    const value = values[name];
+    const value = values[name] === undefined ? null : values[name];
     if (value === undefined) return match;
     if (Array.isArray(value)) {
       if (value.length === 0) return '(NULL)';
