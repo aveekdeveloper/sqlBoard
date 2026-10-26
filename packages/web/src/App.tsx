@@ -19,8 +19,8 @@ export { getToken, setToken };
 
 const NAV_ITEMS = [
   { path: '/connections', label: 'Connections', icon: '🔌' },
-  { path: '/sql', label: 'SQL', icon: '📝' },
-  { path: '/saved', label: 'Saved', icon: '💾' },
+  { path: '/sql', label: 'SQL Workbench', icon: '📝' },
+  { path: '/saved', label: 'Saved Queries', icon: '💾' },
   { path: '/dashboards', label: 'Dashboards', icon: '📊' },
 ];
 

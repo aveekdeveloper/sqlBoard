@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
+
+const PAGE_SIZE = 8;
 
 export default function SavedQueries() {
   const qc = useQueryClient();
   const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const { data: queries } = useQuery({
     queryKey: ['saved-queries'],
     queryFn: () => api.savedQueries.list(),
@@ -23,6 +27,20 @@ export default function SavedQueries() {
     },
   });
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = queries || [];
+    if (!q) return list;
+    return list.filter((item: any) =>
+      String(item.name || '').toLowerCase().includes(q) ||
+      String(item.sql || '').toLowerCase().includes(q),
+    );
+  }, [queries, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <div className="space-y-6">
       <div>
@@ -38,8 +56,20 @@ export default function SavedQueries() {
         </div>
       )}
 
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <input
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search saved queries..."
+          className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-faint md:max-w-sm"
+        />
+        <div className="text-[11.5px] text-ink-faint">
+          {filtered.length} saved quer{filtered.length === 1 ? 'y' : 'ies'}
+        </div>
+      </div>
+
       <div className="space-y-2">
-        {(queries || []).map((q: any) => {
+        {paged.map((q: any) => {
           const conn = (connections || []).find((c: any) => c.id === q.connectionId);
           return (
             <div
@@ -79,9 +109,31 @@ export default function SavedQueries() {
         })}
       </div>
 
-      {(!queries || queries.length === 0) && (
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={safePage <= 1}
+            className="focus-ring rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-soft hover:border-line-strong disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <span className="text-[11.5px] text-ink-muted">
+            Page {safePage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={safePage >= totalPages}
+            className="focus-ring rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-soft hover:border-line-strong disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      {filtered.length === 0 && (
         <div className="rounded-xl border border-dashed border-line bg-surface/60 px-4 py-10 text-center text-[12.5px] text-ink-muted">
-          No saved queries yet. Save one from the SQL workbench.
+          {search ? 'No saved queries match your search.' : 'No saved queries yet. Save one from the SQL workbench.'}
         </div>
       )}
     </div>
