@@ -1,8 +1,9 @@
-import SqlWorkbench from './pages/SqlWorkbench.js';
-
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import Connections from './pages/Connections.js';
+import SqlWorkbench from './pages/SqlWorkbench.js';
+import Dashboards from './pages/Dashboards.js';
+import DashboardDetail from './pages/DashboardDetail.js';
 
 function getToken(): string | null {
   return localStorage.getItem('sqlboard_token');
@@ -152,24 +153,6 @@ function Explore() {
     <div>
       <h2 className="text-xl font-semibold mb-4">Explore</h2>
       <p className="text-gray-500">Browse tables and preview data.</p>
-    </div>
-  );
-}
-
-function Dashboards() {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Dashboards</h2>
-      <p className="text-gray-500">Create and manage dashboards.</p>
-    </div>
-  );
-}
-
-function DashboardDetail() {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Dashboard</h2>
-      <p className="text-gray-500">Pin charts, select backend, view as code.</p>
     </div>
   );
 }
