@@ -1,3 +1,4 @@
+import Explore from './pages/Explore.js';
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import Connections from './pages/Connections.js';
@@ -148,14 +149,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Explore() {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Explore</h2>
-      <p className="text-gray-500">Browse tables and preview data.</p>
-    </div>
-  );
-}
 
 function SavedQueries() {
   return (

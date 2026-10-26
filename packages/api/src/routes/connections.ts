@@ -6,6 +6,7 @@ import { connections, savedQueries, dashboards, dashboardItems, uploads } from '
 import type { DrizzleDb } from '../db/client.js';
 import type { EngineFactory } from '../engines/factory.js';
 import { CreateConnectionRequestSchema, RunQueryRequestSchema } from '@sqlboard/shared';
+import { QueryCache } from '../cache/query-cache.js';
 
 interface RouteDeps {
   db: DrizzleDb;
@@ -13,6 +14,7 @@ interface RouteDeps {
   secretKey: string;
   uploadsDir: string;
   duckDb: import('../engines/duckdb.js').DuckDbEngine;
+  cache: import('../cache/query-cache.js').QueryCache;
 }
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -77,6 +79,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
       .all();
     if (rows.length === 0) throw notFound(`Connection ${id} not found`);
     await deps.engineFactory.closeConnection(numericId);
+    deps.cache.clear();
     deps.db.delete(connections).where(eq(connections.id, numericId)).run();
     reply.code(204);
   });
@@ -105,8 +108,27 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const parsed = RunQueryRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid query payload', parsed.error.flatten());
 
-    const engine = await deps.engineFactory.forConnectionId(Number(id));
-    return engine.run(parsed.data.sql, { maxRows: parsed.data.maxRows });
+    const connectionId = Number(id);
+    const cacheKey = QueryCache.hashKey(connectionId, parsed.data.sql);
+    const cached = deps.cache.get(cacheKey);
+    if (cached) {
+      return {
+        columns: cached.columns,
+        rows: cached.rows,
+        rowCount: cached.rows.length,
+        cached: true,
+        staleAt: new Date(cached.staleAt).toISOString(),
+      };
+    }
+
+    const engine = await deps.engineFactory.forConnectionId(connectionId);
+    const result = await engine.run(parsed.data.sql, { maxRows: parsed.data.maxRows });
+
+    if (result.rows.length <= 10000) {
+      deps.cache.set(cacheKey, result.columns, result.rows);
+    }
+
+    return { ...result, cached: false, staleAt: null };
   });
 }
 
