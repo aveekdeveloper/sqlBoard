@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
 import * as echarts from 'echarts';
 import { api } from '../api/client.js';
 
 export default function SqlWorkbench() {
+  const [searchParams] = useSearchParams();
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [sqlText, setSqlText] = useState('-- @viz: bar\n-- @x: month\n-- @y: revenue\n-- @groupby: region\nSELECT month, region, SUM(revenue) AS revenue FROM data GROUP BY month, region;');
   const [result, setResult] = useState<any>(null);
@@ -13,6 +15,7 @@ export default function SqlWorkbench() {
   const [compileResult, setCompileResult] = useState<any>(null);
   const [status, setStatus] = useState('');
   const [showGrammar, setShowGrammar] = useState(false);
+  const [tables, setTables] = useState<any[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
 
@@ -23,9 +26,23 @@ export default function SqlWorkbench() {
 
   useEffect(() => {
     if (connections && connections.length > 0 && !connectionId) {
-      setConnectionId(connections[0].id);
+      const connParam = searchParams.get('conn');
+      const defaultConn = connParam ? Number(connParam) : connections[0].id;
+      setConnectionId(defaultConn);
     }
-  }, [connections, connectionId]);
+  }, [connections, connectionId, searchParams]);
+
+  useEffect(() => {
+    if (!connectionId) return;
+    api.connections.tables(connectionId).then(setTables).catch(() => setTables([]));
+  }, [connectionId]);
+
+  useEffect(() => {
+    const tableParam = searchParams.get('table');
+    if (tableParam) {
+      setSqlText(`SELECT * FROM ${tableParam} LIMIT 100;`);
+    }
+  }, [searchParams]);
 
   async function runQuery() {
     if (!connectionId) { setStatus('Select a connection first.'); return; }
@@ -107,6 +124,28 @@ export default function SqlWorkbench() {
               <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
             ))}
           </select>
+          {tables.length > 0 && (
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSqlText((prev) => {
+                    const trimmed = prev.trim();
+                    if (trimmed === '' || trimmed.startsWith('--')) {
+                      return `SELECT * FROM ${e.target.value} LIMIT 100;`;
+                    }
+                    return prev + `\n-- ${e.target.value}`;
+                  });
+                }
+              }}
+              className="border rounded px-3 py-2 text-sm"
+            >
+              <option value="">Insert table...</option>
+              {tables.map((t: any) => (
+                <option key={t.name} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+          )}
           <button onClick={runQuery} className="bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium">
             Run SQL
           </button>

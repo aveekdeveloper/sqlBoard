@@ -234,6 +234,21 @@ export default function Connections() {
                   <div className="font-medium truncate">{u.filename}</div>
                   <div className="text-sm text-gray-500">table: {u.tableName} · {u.rowCount} rows · {(u.sizeBytes / 1024).toFixed(1)} KB</div>
                 </div>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Delete ${u.filename}?`)) return;
+                    try {
+                      await api.uploads.delete(u.id);
+                      setStatus(`Deleted ${u.filename}.`);
+                      await load();
+                    } catch (e: any) {
+                      setStatus(e.message);
+                    }
+                  }}
+                  className="text-sm text-red-600 hover:underline shrink-0"
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>

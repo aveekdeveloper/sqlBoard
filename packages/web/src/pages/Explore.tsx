@@ -108,7 +108,7 @@ export default function Explore() {
           </div>
           {selectedTable && (
             <div className="mt-3">
-              <a href={`/sql?table=${selectedTable}`} className="text-sm text-blue-600 hover:underline">
+              <a href={`/sql?table=${selectedTable}&conn=${connectionId}`} className="text-sm text-blue-600 hover:underline">
                 Open in SQL workbench →
               </a>
             </div>

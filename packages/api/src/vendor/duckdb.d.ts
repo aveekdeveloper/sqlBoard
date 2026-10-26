@@ -13,13 +13,13 @@ declare module 'duckdb' {
   }
 
   export interface DuckDbDatabase {
-    connect(callback: (err: Error | null, conn: DuckDbConnection) => void): void;
+    connect(callback?: (err: Error | null, conn: DuckDbConnection) => void): DuckDbConnection;
     close(callback?: (err: Error | null) => void): void;
   }
 
   export class Database implements DuckDbDatabase {
     constructor(path: string, callback?: (err: Error | null) => void);
-    connect(callback: (err: Error | null, conn: DuckDbConnection) => void): void;
+    connect(callback?: (err: Error | null, conn: DuckDbConnection) => void): DuckDbConnection;
     close(callback?: (err: Error | null) => void): void;
   }
 

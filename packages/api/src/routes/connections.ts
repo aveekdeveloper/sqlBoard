@@ -381,6 +381,17 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
       createdAt: row.createdAt,
     }));
   });
+
+  app.delete('/api/uploads/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    const rows = deps.db.select().from(uploads).where(eq(uploads.id, numericId)).all();
+    if (rows.length === 0) throw notFound(`Upload ${id} not found`);
+    const upload = rows[0];
+    await deps.duckDb.dropTable(upload.tableName);
+    deps.db.delete(uploads).where(eq(uploads.id, numericId)).run();
+    reply.code(204);
+  });
 }
 
 export function registerCompileRoute(app: FastifyInstance, deps: RouteDeps): void {

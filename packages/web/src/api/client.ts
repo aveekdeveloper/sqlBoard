@@ -62,6 +62,7 @@ export const api = {
       }
       return res.json();
     },
+    delete: (id: number) => request<void>(`/api/uploads/${id}`, { method: 'DELETE' }),
   },
 
   savedQueries: {

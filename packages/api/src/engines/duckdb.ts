@@ -10,88 +10,6 @@ import {
 
 const escapeLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
-function parseDelimited(
-  raw: string,
-  format: 'csv' | 'json',
-): { columns: string[]; rows: Array<Record<string, unknown>> } {
-  if (format === 'json') {
-    const parsed = JSON.parse(raw);
-    const rows = Array.isArray(parsed) ? parsed : [parsed];
-    const columns: string[] = [];
-    for (const row of rows) {
-      for (const key of Object.keys(row ?? {})) {
-        if (!columns.includes(key)) columns.push(key);
-      }
-    }
-    return { columns, rows };
-  }
-
-  const lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  const nonEmpty = lines.filter((line) => line.trim() !== '');
-  if (nonEmpty.length === 0) return { columns: [], rows: [] };
-
-  const parseRow = (line: string): string[] => {
-    const cells: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (inQuotes) {
-        if (char === '"') {
-          if (line[i + 1] === '"') {
-            current += '"';
-            i++;
-          } else {
-            inQuotes = false;
-          }
-        } else {
-          current += char;
-        }
-      } else {
-        if (char === '"') {
-          inQuotes = true;
-        } else if (char === ',') {
-          cells.push(current);
-          current = '';
-        } else {
-          current += char;
-        }
-      }
-    }
-    cells.push(current);
-    return cells;
-  };
-
-  const header = parseRow(nonEmpty[0]);
-  const columns = header.map((h) => h.trim());
-  const rows: Array<Record<string, unknown>> = [];
-
-  for (let i = 1; i < nonEmpty.length; i++) {
-    const cells = parseRow(nonEmpty[i]);
-    const row: Record<string, unknown> = {};
-    for (let j = 0; j < columns.length; j++) {
-      const rawValue = cells[j] ?? '';
-      const trimmed = rawValue.trim();
-      if (trimmed === '') {
-        row[columns[j]] = null;
-      } else if (/^-?\d+$/.test(trimmed)) {
-        row[columns[j]] = Number(trimmed);
-      } else if (/^-?\d+\.\d+$/.test(trimmed)) {
-        row[columns[j]] = Number(trimmed);
-      } else if (trimmed.toLowerCase() === 'true') {
-        row[columns[j]] = true;
-      } else if (trimmed.toLowerCase() === 'false') {
-        row[columns[j]] = false;
-      } else {
-        row[columns[j]] = trimmed;
-      }
-    }
-    rows.push(row);
-  }
-
-  return { columns, rows };
-}
-
 const columnTypeOf = (rows: Array<Record<string, unknown>>, column: string): string => {
   for (const row of rows) {
     const value = row[column];
@@ -106,22 +24,39 @@ const columnTypeOf = (rows: Array<Record<string, unknown>>, column: string): str
 export class DuckDbEngine implements QueryEngine {
   readonly type = 'duckdb' as const;
 
-  private db: any;
-  private conn: any;
+  private db: any = null;
+  private conn: any = null;
+  private ready: Promise<void> | null = null;
   private writeChain: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly dbPath: string) {}
 
-  private ensureConnection(): void {
+  private async ensureReady(): Promise<void> {
     if (this.conn) return;
-    this.db = new duckdb.Database(this.dbPath);
-    this.conn = this.db.connect();
+    if (!this.ready) {
+      this.ready = new Promise<void>((resolve, reject) => {
+        const db = new duckdb.Database(this.dbPath, (err: Error | null) => {
+          if (err) { reject(err); return; }
+          this.db = db;
+          this.conn = db.connect();
+          console.error('DEBUG: connected, conn type:', typeof this.conn);
+          resolve();
+        });
+      });
+    }
+    await this.ready;
+  }
+
+  private connection(): any {
+    if (!this.conn) throw new Error('Connection not ready');
+    return this.conn;
   }
 
   private async all(sql: string): Promise<Array<Record<string, unknown>>> {
-    this.ensureConnection();
+    await this.ensureReady();
+    const conn = this.connection();
     return new Promise((resolve, reject) => {
-      this.conn.all(sql, (err: Error | null, rows?: Array<Record<string, unknown>>) => {
+      conn.all(sql, (err: Error | null, rows?: Array<Record<string, unknown>>) => {
         if (err) reject(new Error(String(err.message ?? err)));
         else resolve(rows ?? []);
       });
@@ -129,14 +64,15 @@ export class DuckDbEngine implements QueryEngine {
   }
 
   private async exec(sql: string, params?: unknown[]): Promise<void> {
-    this.ensureConnection();
+    await this.ensureReady();
+    const conn = this.connection();
     return new Promise((resolve, reject) => {
       const callback = (err: Error | null) => {
         if (err) reject(new Error(String(err.message ?? err)));
         else resolve();
       };
-      if (params && params.length > 0) this.conn.run(sql, ...params, callback);
-      else this.conn.run(sql, callback);
+      if (params && params.length > 0) conn.run(sql, ...params, callback);
+      else conn.run(sql, callback);
     });
   }
 
@@ -265,4 +201,86 @@ export class DuckDbEngine implements QueryEngine {
       );
     }
   }
+}
+
+function parseDelimited(
+  raw: string,
+  format: 'csv' | 'json',
+): { columns: string[]; rows: Array<Record<string, unknown>> } {
+  if (format === 'json') {
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const columns: string[] = [];
+    for (const row of rows) {
+      for (const key of Object.keys(row ?? {})) {
+        if (!columns.includes(key)) columns.push(key);
+      }
+    }
+    return { columns, rows };
+  }
+
+  const lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const nonEmpty = lines.filter((line) => line.trim() !== '');
+  if (nonEmpty.length === 0) return { columns: [], rows: [] };
+
+  const parseRow = (line: string): string[] => {
+    const cells: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (inQuotes) {
+        if (char === '"') {
+          if (line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += char;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true;
+        } else if (char === ',') {
+          cells.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+    }
+    cells.push(current);
+    return cells;
+  };
+
+  const header = parseRow(nonEmpty[0]);
+  const columns = header.map((h) => h.trim());
+  const rows: Array<Record<string, unknown>> = [];
+
+  for (let i = 1; i < nonEmpty.length; i++) {
+    const cells = parseRow(nonEmpty[i]);
+    const row: Record<string, unknown> = {};
+    for (let j = 0; j < columns.length; j++) {
+      const rawValue = cells[j] ?? '';
+      const trimmed = rawValue.trim();
+      if (trimmed === '') {
+        row[columns[j]] = null;
+      } else if (/^-?\d+$/.test(trimmed)) {
+        row[columns[j]] = Number(trimmed);
+      } else if (/^-?\d+\.\d+$/.test(trimmed)) {
+        row[columns[j]] = Number(trimmed);
+      } else if (trimmed.toLowerCase() === 'true') {
+        row[columns[j]] = true;
+      } else if (trimmed.toLowerCase() === 'false') {
+        row[columns[j]] = false;
+      } else {
+        row[columns[j]] = trimmed;
+      }
+    }
+    rows.push(row);
+  }
+
+  return { columns, rows };
 }
