@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pbi-bg: #f3f2f1;
+  --pbi-card: #ffffff;
+  --pbi-text: #252423;
+  --pbi-muted: #605e5c;
+  --pbi-accent: #0078d4;
+  --pbi-accent-soft: #deecf9;
+  --pbi-border: #edebe9;
+  --pbi-shadow: 0 1.6px 3.6px rgba(0, 0, 0, 0.06), 0 0.3px 0.9px rgba(0, 0, 0, 0.08);
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'Segoe UI Web', system-ui, -apple-system, sans-serif;
+  background: var(--pbi-bg);
+  color: var(--pbi-text);
+}

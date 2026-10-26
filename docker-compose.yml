@@ -1,0 +1,15 @@
+services:
+  sqlboard:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - DATA_DIR=/data
+      - SECRET_KEY=change-me-in-production
+      - CACHE_TTL_MINUTES=5
+    volumes:
+      - sqlboard-data:/data
+    restart: unless-stopped
+
+volumes:
+  sqlboard-data:

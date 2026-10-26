@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+data/
+uploads/
+.env
+.env.*
+!.env.example
+*.duckdb
+*.duckdb.wal
+*.db
+*.db-journal
