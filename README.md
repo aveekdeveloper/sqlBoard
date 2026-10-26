@@ -17,8 +17,8 @@ repository's history for scope.
 # 1. Install dependencies
 npm install
 
-# 2. Seed an admin user (default: admin@example.com / admin)
-DATA_DIR=./data npm run seed -w packages/api
+# 2. Seed sample data + admin user (admin@example.com / admin)
+DATA_DIR=./data npm run seed
 
 # 3. Start the API
 DATA_DIR=./data SECRET_KEY=change-me npm run dev -w packages/api
@@ -29,16 +29,18 @@ npm run dev -w packages/web
 
 Open http://localhost:5173 and log in with `admin@example.com` / `admin`.
 
+Sample data includes: sales (month, region, revenue), users (month, region, users), products (category, subcategory, sales). A sample dashboard with 4 charts and 4 saved queries are pre-created.
+
 ## Docker
 
 ```bash
 docker compose up
 ```
 
-The API listens on port 3001. Seed an admin user by running:
+Seed sample data by running:
 
 ```bash
-docker compose exec sqlboard node packages/api/scripts/seed-admin.cjs
+docker compose exec sqlboard node packages/api/scripts/seed.cjs
 ```
 
 ## License

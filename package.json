@@ -14,6 +14,7 @@
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "dev": "concurrently \"npm run dev -w packages/api\" \"npm run dev -w packages/web\"",
+    "seed": "node packages/api/scripts/seed.cjs",
     "start": "npm run dev -w packages/api"
   },
   "devDependencies": {

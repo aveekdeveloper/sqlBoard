@@ -1,4 +1,4 @@
-import duckdb, { type DuckDbConnection } from 'duckdb';
+import duckdb from 'duckdb';
 import {
   quoteIdentifier,
   toQueryResult,
@@ -9,6 +9,88 @@ import {
 } from './query-engine.js';
 
 const escapeLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+
+function parseDelimited(
+  raw: string,
+  format: 'csv' | 'json',
+): { columns: string[]; rows: Array<Record<string, unknown>> } {
+  if (format === 'json') {
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const columns: string[] = [];
+    for (const row of rows) {
+      for (const key of Object.keys(row ?? {})) {
+        if (!columns.includes(key)) columns.push(key);
+      }
+    }
+    return { columns, rows };
+  }
+
+  const lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const nonEmpty = lines.filter((line) => line.trim() !== '');
+  if (nonEmpty.length === 0) return { columns: [], rows: [] };
+
+  const parseRow = (line: string): string[] => {
+    const cells: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (inQuotes) {
+        if (char === '"') {
+          if (line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += char;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true;
+        } else if (char === ',') {
+          cells.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+    }
+    cells.push(current);
+    return cells;
+  };
+
+  const header = parseRow(nonEmpty[0]);
+  const columns = header.map((h) => h.trim());
+  const rows: Array<Record<string, unknown>> = [];
+
+  for (let i = 1; i < nonEmpty.length; i++) {
+    const cells = parseRow(nonEmpty[i]);
+    const row: Record<string, unknown> = {};
+    for (let j = 0; j < columns.length; j++) {
+      const rawValue = cells[j] ?? '';
+      const trimmed = rawValue.trim();
+      if (trimmed === '') {
+        row[columns[j]] = null;
+      } else if (/^-?\d+$/.test(trimmed)) {
+        row[columns[j]] = Number(trimmed);
+      } else if (/^-?\d+\.\d+$/.test(trimmed)) {
+        row[columns[j]] = Number(trimmed);
+      } else if (trimmed.toLowerCase() === 'true') {
+        row[columns[j]] = true;
+      } else if (trimmed.toLowerCase() === 'false') {
+        row[columns[j]] = false;
+      } else {
+        row[columns[j]] = trimmed;
+      }
+    }
+    rows.push(row);
+  }
+
+  return { columns, rows };
+}
 
 const columnTypeOf = (rows: Array<Record<string, unknown>>, column: string): string => {
   for (const row of rows) {
@@ -24,35 +106,22 @@ const columnTypeOf = (rows: Array<Record<string, unknown>>, column: string): str
 export class DuckDbEngine implements QueryEngine {
   readonly type = 'duckdb' as const;
 
-  private conn: DuckDbConnection | null = null;
-  private connPromise: Promise<DuckDbConnection> | null = null;
+  private db: any;
+  private conn: any;
   private writeChain: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly dbPath: string) {}
 
-  private connection(): Promise<DuckDbConnection> {
-    if (this.conn) return Promise.resolve(this.conn);
-    if (!this.connPromise) {
-      this.connPromise = new Promise((resolve, reject) => {
-        const db = new duckdb.Database(this.dbPath, (err: Error | null) => {
-          if (err) reject(err);
-        });
-        db.connect((err: Error | null, conn: DuckDbConnection) => {
-          if (err) reject(err);
-          else resolve(conn);
-        });
-      });
-      this.connPromise.catch(() => {
-        this.connPromise = null;
-      });
-    }
-    return this.connPromise;
+  private ensureConnection(): void {
+    if (this.conn) return;
+    this.db = new duckdb.Database(this.dbPath);
+    this.conn = this.db.connect();
   }
 
   private async all(sql: string): Promise<Array<Record<string, unknown>>> {
-    const conn = await this.connection();
+    this.ensureConnection();
     return new Promise((resolve, reject) => {
-      conn.all(sql, (err: Error | null, rows?: Array<Record<string, unknown>>) => {
+      this.conn.all(sql, (err: Error | null, rows?: Array<Record<string, unknown>>) => {
         if (err) reject(new Error(String(err.message ?? err)));
         else resolve(rows ?? []);
       });
@@ -60,14 +129,14 @@ export class DuckDbEngine implements QueryEngine {
   }
 
   private async exec(sql: string, params?: unknown[]): Promise<void> {
-    const conn = await this.connection();
+    this.ensureConnection();
     return new Promise((resolve, reject) => {
       const callback = (err: Error | null) => {
         if (err) reject(new Error(String(err.message ?? err)));
         else resolve();
       };
-      if (params) conn.run(sql, params, callback);
-      else conn.run(sql, callback);
+      if (params && params.length > 0) this.conn.run(sql, ...params, callback);
+      else this.conn.run(sql, callback);
     });
   }
 
@@ -129,19 +198,21 @@ export class DuckDbEngine implements QueryEngine {
 
   async ingestFile(filePath: string, table: string): Promise<void> {
     const extension = filePath.toLowerCase().split('.').pop() ?? '';
-    const reader =
-      extension === 'parquet'
-        ? 'read_parquet'
-        : extension === 'json'
-          ? 'read_json_auto'
-          : 'read_csv_auto';
-    await this.dropTable(table);
-    await this.withWriteLock(() =>
-      this.exec(
-        `CREATE TABLE ${quoteIdentifier(table)} AS
-         SELECT * FROM ${reader}(${escapeLiteral(filePath)})`,
-      ),
-    );
+    if (extension === 'parquet') {
+      await this.dropTable(table);
+      await this.withWriteLock(() =>
+        this.exec(
+          `CREATE TABLE ${quoteIdentifier(table)} AS
+           SELECT * FROM read_parquet(${escapeLiteral(filePath)})`,
+        ),
+      );
+      return;
+    }
+
+    const fs = await import('node:fs');
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const { columns, rows } = parseDelimited(raw, extension === 'json' ? 'json' : 'csv');
+    await this.materializeRows(table, columns, rows);
   }
 
   async materializeRows(
