@@ -1,3 +1,5 @@
+import SqlWorkbench from './pages/SqlWorkbench.js';
+
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import Connections from './pages/Connections.js';
@@ -150,15 +152,6 @@ function Explore() {
     <div>
       <h2 className="text-xl font-semibold mb-4">Explore</h2>
       <p className="text-gray-500">Browse tables and preview data.</p>
-    </div>
-  );
-}
-
-function SqlWorkbench() {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">SQL Workbench</h2>
-      <p className="text-gray-500">Write SQL, run queries, annotate, and create charts.</p>
     </div>
   );
 }
