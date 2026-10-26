@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
@@ -9,13 +9,18 @@ import { api } from '../api/client.js';
 export default function SqlWorkbench() {
   const [searchParams] = useSearchParams();
   const [connectionId, setConnectionId] = useState<number | null>(null);
-  const [sqlText, setSqlText] = useState('-- @viz: bar\n-- @x: month\n-- @y: revenue\n-- @groupby: region\nSELECT month, region, SUM(revenue) AS revenue FROM data GROUP BY month, region;');
+  const [sqlText, setSqlText] = useState(
+    '-- @viz: bar\n-- @x: month\n-- @y: revenue\n-- @groupby: region\nSELECT month, region, SUM(revenue) AS revenue FROM data GROUP BY month, region;',
+  );
   const [result, setResult] = useState<any>(null);
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState<any>(null);
   const [status, setStatus] = useState('');
   const [showGrammar, setShowGrammar] = useState(false);
   const [tables, setTables] = useState<any[]>([]);
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [preview, setPreview] = useState<any>(null);
+  const [tableFilter, setTableFilter] = useState('');
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
 
@@ -34,7 +39,12 @@ export default function SqlWorkbench() {
 
   useEffect(() => {
     if (!connectionId) return;
-    api.connections.tables(connectionId).then(setTables).catch(() => setTables([]));
+    api.connections
+      .tables(connectionId)
+      .then(setTables)
+      .catch(() => setTables([]));
+    setSelectedTable(null);
+    setPreview(null);
   }, [connectionId]);
 
   useEffect(() => {
@@ -44,13 +54,29 @@ export default function SqlWorkbench() {
     }
   }, [searchParams]);
 
+  async function loadPreview(table: string) {
+    if (!connectionId) return;
+    setSelectedTable(table);
+    try {
+      const res = await api.connections.preview(connectionId, table);
+      setPreview(res);
+    } catch (e: any) {
+      setPreview({ error: e.message });
+    }
+  }
+
   async function runQuery() {
-    if (!connectionId) { setStatus('Select a connection first.'); return; }
+    if (!connectionId) {
+      setStatus('Select a connection first.');
+      return;
+    }
     setStatus('Running...');
     try {
       const res = await api.connections.query(connectionId, sqlText);
       setResult(res);
-      setStatus(`${res.rowCount} row${res.rowCount === 1 ? '' : 's'} returned${res.cached ? ' (cached)' : ''}.`);
+      setStatus(
+        `${res.rowCount} row${res.rowCount === 1 ? '' : 's'} returned${res.cached ? ' (cached)' : ''}.`,
+      );
     } catch (e: any) {
       setStatus(e.message);
       setResult(null);
@@ -90,12 +116,19 @@ export default function SqlWorkbench() {
     const spec = res.compiled?.echarts || res.echarts;
     if (spec && chartInstance.current) {
       chartInstance.current.setOption(spec, true);
-      setTimeout(() => { try { chartInstance.current.resize(); } catch (e) {} }, 50);
+      setTimeout(() => {
+        try {
+          chartInstance.current.resize();
+        } catch (e) {}
+      }, 50);
     }
   }
 
   async function saveQuery() {
-    if (!connectionId) { setStatus('Select a connection first.'); return; }
+    if (!connectionId) {
+      setStatus('Select a connection first.');
+      return;
+    }
     const name = prompt('Query name:');
     if (!name) return;
     try {
@@ -106,22 +139,37 @@ export default function SqlWorkbench() {
     }
   }
 
+  const filteredTables = useMemo(() => {
+    const q = tableFilter.trim().toLowerCase();
+    if (!q) return tables;
+    return tables.filter((t: any) => String(t.name).toLowerCase().includes(q));
+  }, [tables, tableFilter]);
+
   const columns = result?.columns || [];
   const rows = result?.rows || [];
+  const previewColumns = preview?.columns || [];
+  const previewRows = preview?.rows || [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-semibold">SQL Workbench</h2>
-        <div className="flex gap-2 flex-wrap">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-[20px] font-semibold tracking-[-0.015em] text-ink">SQL Workbench</h2>
+          <p className="mt-1 text-[12.5px] text-ink-muted">
+            Explore schemas, write annotated SQL, run queries, and compile charts.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={connectionId ?? ''}
             onChange={(e) => setConnectionId(Number(e.target.value))}
-            className="border rounded px-3 py-2 text-sm"
+            className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
           >
             <option value="">Select connection...</option>
             {(connections || []).map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.type})
+              </option>
             ))}
           </select>
           {tables.length > 0 && (
@@ -138,46 +186,160 @@ export default function SqlWorkbench() {
                   });
                 }
               }}
-              className="border rounded px-3 py-2 text-sm"
+              className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
             >
               <option value="">Insert table...</option>
               {tables.map((t: any) => (
-                <option key={t.name} value={t.name}>{t.name}</option>
+                <option key={t.name} value={t.name}>
+                  {t.name}
+                </option>
               ))}
             </select>
           )}
-          <button onClick={runQuery} className="bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium">
+          <button
+            onClick={runQuery}
+            className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+          >
             Run SQL
           </button>
-          <button onClick={compileChart} disabled={compiling} className="bg-green-600 text-white rounded px-4 py-2 text-sm font-medium disabled:opacity-50">
+          <button
+            onClick={compileChart}
+            disabled={compiling}
+            className="focus-ring rounded-md border border-accent/30 bg-accent-soft px-4 py-2 text-[12.5px] font-medium text-accent hover:bg-accent-soft/70 disabled:opacity-50"
+          >
             {compiling ? 'Compiling...' : 'Compile & Chart'}
           </button>
-          <button onClick={saveQuery} className="border rounded px-4 py-2 text-sm font-medium">
+          <button
+            onClick={saveQuery}
+            className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+          >
             Save
           </button>
         </div>
       </div>
 
-      {status && <p className="text-sm text-gray-600 bg-gray-100 rounded px-3 py-2">{status}</p>}
+      {status && (
+        <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted">
+          {status}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* SQL Editor */}
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium text-sm">SQL + Annotations</h3>
-            <button onClick={() => setShowGrammar(!showGrammar)} className="text-xs text-blue-600 hover:underline">
-              {showGrammar ? 'Hide' : 'Show'} grammar
-            </button>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        {/* Schema browser */}
+        <aside className="rounded-xl border border-line bg-surface p-3 shadow-card">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+              Tables
+            </h3>
+            <span className="text-[10.5px] text-ink-faint">{tables.length}</span>
           </div>
-          <CodeMirror
-            value={sqlText}
-            height="320px"
-            extensions={[sql()]}
-            onChange={(val) => setSqlText(val)}
-            className="border rounded"
+          <input
+            value={tableFilter}
+            onChange={(e) => setTableFilter(e.target.value)}
+            placeholder="Filter tables..."
+            className="focus-ring mb-3 w-full rounded-md border border-line bg-paper px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-faint"
           />
-          {showGrammar && (
-            <pre className="mt-3 p-3 bg-gray-50 rounded text-xs overflow-auto max-h-60">
+          <div className="max-h-72 space-y-1 overflow-auto pr-1">
+            {filteredTables.length === 0 && (
+              <p className="px-2 py-3 text-[12px] text-ink-faint">No tables found.</p>
+            )}
+            {filteredTables.map((t: any) => (
+              <button
+                key={t.name}
+                onClick={() => loadPreview(t.name)}
+                className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
+                  selectedTable === t.name
+                    ? 'bg-accent-soft text-accent-ink'
+                    : 'text-ink-soft hover:bg-[#f1eee7] hover:text-ink'
+                }`}
+              >
+                <span className="truncate">{t.name}</span>
+                {t.columns && (
+                  <span className="ml-2 shrink-0 text-[10px] text-ink-faint">
+                    {t.columns.length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {selectedTable && (
+            <div className="mt-4 border-t border-line pt-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="truncate text-[12px] font-semibold text-ink">{selectedTable}</h4>
+                <button
+                  onClick={() => setSqlText(`SELECT * FROM ${selectedTable} LIMIT 100;`)}
+                  className="text-[10.5px] font-medium text-accent hover:underline"
+                >
+                  Use in editor
+                </button>
+              </div>
+              <div className="max-h-64 overflow-auto rounded-md border border-line">
+                {preview?.error ? (
+                  <p className="p-3 text-[12px] text-signal">{preview.error}</p>
+                ) : previewRows.length === 0 ? (
+                  <p className="p-3 text-[12px] text-ink-faint">No data to preview.</p>
+                ) : (
+                  <table className="w-full text-[11.5px]">
+                    <thead className="sticky top-0 bg-paper">
+                      <tr>
+                        {previewColumns.map((c: string) => (
+                          <th
+                            key={c}
+                            className="border-b border-line px-2.5 py-1.5 text-left font-medium text-ink-muted"
+                          >
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.slice(0, 100).map((row: any, i: number) => (
+                        <tr key={i} className="border-b border-line/60 hover:bg-[#f7f4ed]">
+                          {previewColumns.map((c: string) => (
+                            <td key={c} className="whitespace-nowrap px-2.5 py-1.5 text-ink-soft">
+                              {String(row[c] ?? '')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              {preview?.rowCount !== undefined && (
+                <p className="mt-2 text-[10.5px] text-ink-faint">
+                  {preview.rowCount} row{preview.rowCount === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
+          )}
+        </aside>
+
+        {/* Editor + results */}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+                SQL + Annotations
+              </h3>
+              <button
+                onClick={() => setShowGrammar(!showGrammar)}
+                className="text-[11px] font-medium text-accent hover:underline"
+              >
+                {showGrammar ? 'Hide' : 'Show'} grammar
+              </button>
+            </div>
+            <div className="overflow-hidden rounded-md border border-line">
+              <CodeMirror
+                value={sqlText}
+                height="320px"
+                extensions={[sql()]}
+                onChange={(val) => setSqlText(val)}
+              />
+            </div>
+            {showGrammar && (
+              <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-paper p-3 text-[11px] text-ink-soft">
 {`-- @viz: bar | line | area | scatter | pie | heatmap
 -- @x: column          -- @y: column
 -- @groupby: column    -- @stack: true | false | name
@@ -187,54 +349,72 @@ export default function SqlWorkbench() {
 
 No annotations? The compiler infers: temporal->x, first measure->y,
 first category->series, default bar/line.`}
-            </pre>
-          )}
-        </div>
-
-        {/* Results + Chart */}
-        <div className="space-y-4">
-          {/* Results table */}
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <h3 className="font-medium text-sm mb-2">Results {rows.length > 0 && `(${rows.length})`}</h3>
-            <div className="overflow-auto max-h-60 border rounded">
-              {rows.length === 0 ? (
-                <p className="text-sm text-gray-400 p-4">Run a query to see results.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      {columns.map((c: string) => (
-                        <th key={c} className="px-3 py-2 text-left font-medium border-b">{c}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.slice(0, 200).map((row: any, i: number) => (
-                      <tr key={i} className="border-b hover:bg-gray-50">
-                        {columns.map((c: string) => (
-                          <td key={c} className="px-3 py-2 whitespace-nowrap">{String(row[c] ?? '')}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+              </pre>
+            )}
           </div>
 
-          {/* Chart */}
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <h3 className="font-medium text-sm mb-2">Chart</h3>
-            <div ref={chartRef} className="w-full h-64 md:h-80" />
-            {compileResult?.diagnostics?.length > 0 && (
-              <div className="mt-3 space-y-1">
-                {compileResult.diagnostics.map((d: any, i: number) => (
-                  <div key={i} className={`text-xs px-2 py-1 rounded ${d.severity === 'error' ? 'bg-red-50 text-red-700' : d.severity === 'warning' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
-                    <span className="font-mono font-semibold">{d.code}</span> {d.message}
-                  </div>
-                ))}
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+              <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+                Results {rows.length > 0 && `(${rows.length})`}
+              </h3>
+              <div className="max-h-72 overflow-auto rounded-md border border-line">
+                {rows.length === 0 ? (
+                  <p className="p-4 text-[12px] text-ink-faint">Run a query to see results.</p>
+                ) : (
+                  <table className="w-full text-[12px]">
+                    <thead className="sticky top-0 bg-paper">
+                      <tr>
+                        {columns.map((c: string) => (
+                          <th
+                            key={c}
+                            className="border-b border-line px-3 py-2 text-left font-medium text-ink-muted"
+                          >
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.slice(0, 200).map((row: any, i: number) => (
+                        <tr key={i} className="border-b border-line/60 hover:bg-[#f7f4ed]">
+                          {columns.map((c: string) => (
+                            <td key={c} className="whitespace-nowrap px-3 py-2 text-ink-soft">
+                              {String(row[c] ?? '')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
-            )}
+            </div>
+
+            <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+              <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+                Chart
+              </h3>
+              <div ref={chartRef} className="h-64 w-full md:h-80" />
+              {compileResult?.diagnostics?.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  {compileResult.diagnostics.map((d: any, i: number) => (
+                    <div
+                      key={i}
+                      className={`rounded-md px-2 py-1 text-[11px] ${
+                        d.severity === 'error'
+                          ? 'bg-signal-soft text-signal'
+                          : d.severity === 'warning'
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-blue-50 text-blue-700'
+                      }`}
+                    >
+                      <span className="font-mono font-semibold">{d.code}</span> {d.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

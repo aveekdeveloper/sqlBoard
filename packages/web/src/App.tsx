@@ -1,4 +1,3 @@
-import Explore from './pages/Explore.js';
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import Connections from './pages/Connections.js';
@@ -20,7 +19,6 @@ export { getToken, setToken };
 
 const NAV_ITEMS = [
   { path: '/connections', label: 'Connections', icon: '🔌' },
-  { path: '/explore', label: 'Explore', icon: '🔍' },
   { path: '/sql', label: 'SQL', icon: '📝' },
   { path: '/dashboards', label: 'Dashboards', icon: '📊' },
   { path: '/saved', label: 'Saved', icon: '💾' },
@@ -171,7 +169,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/connections" element={<Shell><Connections /></Shell>} />
-      <Route path="/explore" element={<Shell><Explore /></Shell>} />
+      <Route path="/explore" element={<Navigate to="/sql" replace />} />
       <Route path="/sql" element={<Shell><SqlWorkbench /></Shell>} />
       <Route path="/dashboards" element={<Shell><Dashboards /></Shell>} />
       <Route path="/dashboards/:id" element={<Shell><DashboardDetail /></Shell>} />
