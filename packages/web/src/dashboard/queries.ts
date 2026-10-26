@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import type { ManifestItem } from './model.js';
+import { applyFilters, type FilterValue } from './filters.js';
 
 export interface QueryResult {
   columns: string[];
@@ -41,11 +42,16 @@ function maxRowsFor(item: ManifestItem): number {
   return 5000;
 }
 
-export function useBlockData(item: ManifestItem, enabled = true) {
+export function useBlockData(
+  item: ManifestItem,
+  enabled = true,
+  filterValues?: Record<string, FilterValue>,
+) {
   const maxRows = maxRowsFor(item);
+  const resolvedSql = filterValues ? applyFilters(item.sql, filterValues) : item.sql;
   return useQuery({
-    queryKey: ['block-data', item.connectionId, item.sql, maxRows],
-    queryFn: () => api.connections.query(item.connectionId, item.sql, maxRows) as Promise<QueryResult>,
+    queryKey: ['block-data', item.connectionId, resolvedSql, maxRows, filterValues],
+    queryFn: () => api.connections.query(item.connectionId, resolvedSql, maxRows) as Promise<QueryResult>,
     enabled: enabled && item.blockType !== 'text' && item.connectionId > 0 && item.sql.trim().length > 0,
     retry: false,
     staleTime: 60_000,
@@ -53,13 +59,18 @@ export function useBlockData(item: ManifestItem, enabled = true) {
   });
 }
 
-export function useChartSpec(item: ManifestItem, enabled = true) {
-  const hasTheme = /^\s*--\s*@theme\s*:/im.test(item.sql);
+export function useChartSpec(
+  item: ManifestItem,
+  enabled = true,
+  filterValues?: Record<string, FilterValue>,
+) {
+  const resolvedSql = filterValues ? applyFilters(item.sql, filterValues) : item.sql;
+  const hasTheme = /^\s*--\s*@theme\s*:/im.test(resolvedSql);
   return useQuery({
-    queryKey: ['block-chart', item.connectionId, item.sql, hasTheme ? 'annotated' : 'swiss'],
+    queryKey: ['block-chart', item.connectionId, resolvedSql, hasTheme ? 'annotated' : 'swiss', filterValues],
     queryFn: async (): Promise<ChartSpecResult> => {
       const response = await api.compile({
-        sql: item.sql,
+        sql: resolvedSql,
         connectionId: item.connectionId,
         backends: ['echarts'],
         ...(hasTheme ? {} : { theme: 'swiss' }),

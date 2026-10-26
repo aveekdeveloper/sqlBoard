@@ -10,6 +10,7 @@ import {
 import type { DashboardBlockType, ManifestItem } from './model.js';
 import { resolveConnectionName } from './model.js';
 import BlockBody from './BlockBody.js';
+import { extractFilterRefs, formatFilterValue } from './filters.js';
 
 const ICONS: Record<DashboardBlockType, typeof BarChart3> = {
   chart: BarChart3,
@@ -30,6 +31,8 @@ export function BlockCard({
   editing,
   draggable,
   connections,
+  filters,
+  filterValues,
   onEdit,
   onDelete,
   bodyClassName = '',
@@ -38,6 +41,8 @@ export function BlockCard({
   editing: boolean;
   draggable?: boolean;
   connections: Array<{ id: number; name: string }>;
+  filters?: any[];
+  filterValues?: Record<string, any>;
   onEdit?: () => void;
   onDelete?: () => void;
   bodyClassName?: string;
@@ -104,8 +109,16 @@ export function BlockCard({
         )}
       </header>
       <div className={`min-h-0 flex-1 ${contentPadding}`}>
-        <BlockBody item={item} />
+        <BlockBody item={item} filters={filters} filterValues={filterValues} />
       </div>
+      {extractFilterRefs(item.sql).length > 0 && (
+        <div className="border-t border-line/60 px-4 py-1.5 text-[10px] text-ink-faint">
+          Filtered on{' '}
+          {extractFilterRefs(item.sql)
+            .map((name) => `${name}: ${formatFilterValue(filterValues?.[name] ?? null)}`)
+            .join(' · ')}
+        </div>
+      )}
     </div>
   );
 }

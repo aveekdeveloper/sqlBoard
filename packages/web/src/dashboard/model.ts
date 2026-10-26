@@ -9,6 +9,7 @@ import {
   type ManifestDashboard,
   type ManifestDiagnostic,
   type ManifestItem,
+  type ManifestFilter,
   type MetricFormat,
 } from '@sqlboard/shared';
 
@@ -17,6 +18,7 @@ export type { DashboardBlockType, Layout, ManifestDiagnostic, ManifestItem, Metr
 export interface DashboardDoc {
   name: string;
   description: string | null;
+  filters: ManifestFilter[];
   items: ManifestItem[];
 }
 
@@ -99,11 +101,13 @@ export function dashboardToDoc(
     name: string;
     description: string | null;
     items: DashboardItemDto[];
+    filters?: ManifestFilter[];
   },
 ): DashboardDoc {
   return {
     name: dashboard.name,
     description: dashboard.description,
+    filters: dashboard.filters ?? [],
     items: dashboard.items.map((item) => ({
       id: item.id,
       title: item.title,

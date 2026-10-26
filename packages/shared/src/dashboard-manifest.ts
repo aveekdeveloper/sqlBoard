@@ -23,9 +23,20 @@ export interface ManifestItem {
   layout: Layout;
 }
 
+export interface ManifestFilter {
+  name: string;
+  type: 'select' | 'multiselect' | 'tabs' | 'buttons' | 'date' | 'daterange';
+  presentation?: 'select' | 'multiselect' | 'tabs' | 'buttons' | 'date' | 'daterange';
+  connectionId?: number;
+  sql?: string;
+  values?: string[];
+  defaultValue?: string | string[] | null;
+}
+
 export interface ManifestDashboard {
   name: string;
   description: string | null;
+  filters: ManifestFilter[];
   items: ManifestItem[];
 }
 
@@ -37,6 +48,7 @@ export interface ManifestDiagnostic {
 }
 
 const BLOCK_LINE = /^--\s*@block:\s*(.*?)\s*$/;
+const FILTER_LINE = /^--\s*@filter:\s*(.*?)\s*$/;
 const ANNOTATION_LINE = /^--\s*@([a-zA-Z0-9_]+):\s*(.*?)\s*$/;
 const MANIFEST_KEYS = new Set(['type', 'layout', 'connection', 'block']);
 const TRUTHY = new Set(['true', 'yes', '1', 'on']);
@@ -237,6 +249,27 @@ export function serializeDashboardManifest(
   if (dashboard.description) lines.push(`-- @description: ${oneLine(dashboard.description)}`);
   lines.push('-- @grid: 12');
 
+  for (const filter of dashboard.filters) {
+    const connection = filter.connectionId ? byId.get(filter.connectionId) : undefined;
+    lines.push('');
+    lines.push(`-- @filter: ${oneLine(filter.name) || 'Untitled filter'}`);
+    lines.push(`-- @type: ${filter.type}`);
+    if (filter.presentation && filter.presentation !== filter.type) {
+      lines.push(`-- @presentation: ${filter.presentation}`);
+    }
+    if (filter.connectionId && connection) {
+      lines.push(`-- @connection: ${oneLine(connection)}`);
+    }
+    if (filter.sql) lines.push(`-- @sql: ${oneLine(filter.sql)}`);
+    if (filter.values?.length) lines.push(`-- @values: ${filter.values.map(oneLine).join(', ')}`);
+    if (filter.defaultValue !== undefined && filter.defaultValue !== null) {
+      const value = Array.isArray(filter.defaultValue)
+        ? filter.defaultValue.map(oneLine).join(', ')
+        : oneLine(String(filter.defaultValue));
+      lines.push(`-- @default: ${value}`);
+    }
+  }
+
   for (const item of dashboard.items) {
     const connection = byId.get(item.connectionId) ?? `connection-${item.connectionId}`;
     lines.push('');
@@ -275,12 +308,14 @@ export function parseDashboardManifest(
   const diagnostics: ManifestDiagnostic[] = [];
   const lines = code.replace(/\r\n/g, '\n').split('\n');
   const blockStarts: number[] = [];
+  const filterStarts: number[] = [];
 
   lines.forEach((line, index) => {
     if (BLOCK_LINE.test(line)) blockStarts.push(index);
+    if (FILTER_LINE.test(line)) filterStarts.push(index);
   });
 
-  const headerEnd = blockStarts[0] ?? lines.length;
+  const headerEnd = [...blockStarts, ...filterStarts].sort((a, b) => a - b)[0] ?? lines.length;
   const header = lines.slice(0, headerEnd).join('\n');
   const dashboardAnnotations: Record<string, string> = {};
   for (const line of header.split('\n')) {
@@ -299,6 +334,53 @@ export function parseDashboardManifest(
   for (const savedQuery of savedQueries) {
     const key = savedQuery.name.trim().toLowerCase();
     if (!savedByName.has(key)) savedByName.set(key, savedQuery);
+  }
+
+  const filters: ManifestFilter[] = [];
+  for (let index = 0; index < filterStarts.length; index += 1) {
+    const start = filterStarts[index];
+    const end = filterStarts[index + 1] ?? blockStarts[0] ?? lines.length;
+    const segment = lines.slice(start, end);
+    const name = segment[0].match(FILTER_LINE)?.[1]?.trim() || `Filter ${index + 1}`;
+    const annotations: Record<string, string> = {};
+    for (let cursor = 1; cursor < segment.length; cursor += 1) {
+      const line = segment[cursor];
+      const match = line.match(ANNOTATION_LINE);
+      if (match) annotations[match[1].toLowerCase()] = match[2];
+    }
+    const type = (annotations.type?.trim().toLowerCase() as ManifestFilter['type']) || 'select';
+    const presentation = (annotations.presentation?.trim().toLowerCase() as ManifestFilter['presentation']) || type;
+    const connectionName = annotations.connection?.trim() ?? '';
+    const connection = connectionName ? byName.get(connectionName.toLowerCase()) : undefined;
+    if (connectionName && !connection) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'UNKNOWN_CONNECTION',
+        message: `Connection '${connectionName}' was not found (filter '${name}').`,
+        block: name,
+      });
+    }
+    const values = annotations.values
+      ? annotations.values.split(',').map((value) => value.trim()).filter(Boolean)
+      : undefined;
+    const defaultValueRaw = annotations.default?.trim();
+    const defaultValue =
+      defaultValueRaw && values && values.length > 0 && defaultValueRaw.includes(',')
+        ? defaultValueRaw.split(',').map((value) => value.trim()).filter(Boolean)
+        : defaultValueRaw || null;
+    filters.push({
+      name,
+      type: ['select', 'multiselect', 'tabs', 'buttons', 'date', 'daterange'].includes(type)
+        ? type
+        : 'select',
+      presentation: ['select', 'multiselect', 'tabs', 'buttons', 'date', 'daterange'].includes(presentation)
+        ? presentation
+        : undefined,
+      connectionId: connection?.id,
+      sql: annotations.sql?.trim() || undefined,
+      values,
+      defaultValue,
+    });
   }
 
   const items: ManifestItem[] = [];
@@ -485,7 +567,7 @@ export function parseDashboardManifest(
   }
 
   return {
-    dashboard: { name, description, items },
+    dashboard: { name, description, filters, items },
     diagnostics,
   };
 }

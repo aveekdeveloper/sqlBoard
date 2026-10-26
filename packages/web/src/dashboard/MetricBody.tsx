@@ -160,9 +160,15 @@ function Sparkline({
   );
 }
 
-export default function MetricBody({ item }: { item: ManifestItem }) {
+export default function MetricBody({
+  item,
+  filterValues,
+}: {
+  item: ManifestItem;
+  filterValues?: Record<string, any>;
+}) {
   const config = useMemo(() => readConfig(item), [item]);
-  const { data, isLoading, isError, error, refetch } = useBlockData(item);
+  const { data, isLoading, isError, error, refetch } = useBlockData(item, true, filterValues);
 
   if (isLoading) return <BlockLoading variant="metric" />;
   if (isError) {

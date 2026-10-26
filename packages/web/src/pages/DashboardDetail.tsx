@@ -38,6 +38,8 @@ import {
   type ManifestItem,
 } from '../dashboard/model.js';
 import { BlockCard } from '../dashboard/BlockCard.js';
+import FilterBar from '../dashboard/FilterBar.js';
+import type { FilterValue } from '../dashboard/filters.js';
 import AddBlockMenu from '../dashboard/AddBlockMenu.js';
 import BlockEditor from '../dashboard/BlockEditor.js';
 import CodePanel from '../dashboard/CodePanel.js';
@@ -137,7 +139,7 @@ function toGridLayouts(items: ManifestItem[]): GridEntry[] {
 }
 
 function blankDoc(name = 'Dashboard'): DashboardDoc {
-  return { name, description: null, items: [] };
+  return { name, description: null, filters: [], items: [] };
 }
 
 export default function DashboardDetail() {
@@ -278,6 +280,7 @@ export default function DashboardDetail() {
   const dismissToast = useCallback(() => setToast(null), []);
 
   const [mode, setMode] = useState<Mode>('view');
+  const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
   const [codeOpen, setCodeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
@@ -750,7 +753,17 @@ export default function DashboardDetail() {
                 onCode={() => setCodeOpen(true)}
               />
             ) : isDesktop ? (
-              <div className={`grid-surface ${editing ? 'is-editing' : ''}`}>
+              <>
+                {doc.filters?.length ? (
+                  <div className="mb-3">
+                    <FilterBar
+                      filters={doc.filters}
+                      values={filterValues}
+                      onChange={(name, value) => setFilterValues((current) => ({ ...current, [name]: value }))}
+                    />
+                  </div>
+                ) : null}
+                <div className={`grid-surface ${editing ? 'is-editing' : ''}`}>
                 <Grid
                   className="layout"
                   layout={gridLayouts}
@@ -774,6 +787,8 @@ export default function DashboardDetail() {
                         editing={editing}
                         draggable={canArrange}
                         connections={connections}
+                        filters={doc.filters}
+                        filterValues={filterValues}
                         onEdit={() => openEdit(index)}
                         onDelete={() => removeBlock(index)}
                       />
@@ -790,14 +805,24 @@ export default function DashboardDetail() {
                   </div>
                 )}
               </div>
+              </>
             ) : (
               <div className="flex flex-col gap-3">
+                {doc.filters?.length ? (
+                  <FilterBar
+                    filters={doc.filters}
+                    values={filterValues}
+                    onChange={(name, value) => setFilterValues((current) => ({ ...current, [name]: value }))}
+                  />
+                ) : null}
                 {mobileItems.map(({ item, index }) => (
                   <div key={`${item.title}-${index}`} style={{ height: MOBILE_HEIGHT[item.blockType] }}>
                     <BlockCard
                       item={item}
                       editing={false}
                       connections={connections}
+                      filters={doc.filters}
+                      filterValues={filterValues}
                     />
                   </div>
                 ))}

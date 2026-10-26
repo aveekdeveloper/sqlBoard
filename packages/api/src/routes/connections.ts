@@ -434,6 +434,7 @@ function readDashboard(deps: RouteDeps, id: number): {
     snapshot: {
       name: row.name,
       description: row.description,
+      filters: [],
       items: items.map((item) => ({
         id: item.id,
         title: item.title,
@@ -617,7 +618,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     insertVersion(
       deps,
       inserted.id,
-      { name: inserted.name, description: inserted.description, items: [] },
+      { name: inserted.name, description: inserted.description, filters: [], items: [] },
       'Dashboard created',
       'manual',
       authorIdFrom(request, deps),
@@ -783,6 +784,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       name: parsed.data.name ?? current.name,
       description:
         parsed.data.description === undefined ? current.description : parsed.data.description,
+      filters: current.filters ?? [],
       items: parsed.data.items.map((item) => ({
         title: item.title,
         sql: item.sql,

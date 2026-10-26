@@ -36,8 +36,14 @@ function compareValues(left: unknown, right: unknown, numeric: boolean): number 
   });
 }
 
-export default function TableBody({ item }: { item: ManifestItem }) {
-  const { data, isLoading, isError, error, refetch } = useBlockData(item);
+export default function TableBody({
+  item,
+  filterValues,
+}: {
+  item: ManifestItem;
+  filterValues?: Record<string, any>;
+}) {
+  const { data, isLoading, isError, error, refetch } = useBlockData(item, true, filterValues);
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(1);
 

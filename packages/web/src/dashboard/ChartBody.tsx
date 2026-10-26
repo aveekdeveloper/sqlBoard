@@ -105,10 +105,16 @@ function buildOption(raw: Record<string, unknown>): EChartsOption {
   } as EChartsOption;
 }
 
-export default function ChartBody({ item }: { item: ManifestItem }) {
+export default function ChartBody({
+  item,
+  filterValues,
+}: {
+  item: ManifestItem;
+  filterValues?: Record<string, any>;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const { data, isLoading, isError, error, refetch } = useChartSpec(item);
+  const { data, isLoading, isError, error, refetch } = useChartSpec(item, true, filterValues);
 
   const option = useMemo(() => (data?.option ? buildOption(data.option) : null), [data]);
 
