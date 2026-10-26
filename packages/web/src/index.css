@@ -11,6 +11,15 @@
   --pbi-accent-soft: #deecf9;
   --pbi-border: #edebe9;
   --pbi-shadow: 0 1.6px 3.6px rgba(0, 0, 0, 0.06), 0 0.3px 0.9px rgba(0, 0, 0, 0.08);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
 }
 
 body {
@@ -18,4 +27,27 @@ body {
   font-family: 'Segoe UI', 'Segoe UI Web', system-ui, -apple-system, sans-serif;
   background: var(--pbi-bg);
   color: var(--pbi-text);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: contain;
 }
+
+/* Touch-friendly minimum tap targets */
+button, a, input, select, textarea {
+  min-height: 44px;
+}
+
+/* Prevent zoom on input focus (iOS) */
+input, select, textarea {
+  font-size: 16px;
+}
+
+@media (min-width: 768px) {
+  input, select, textarea {
+    font-size: 14px;
+  }
+}
+
+/* Safe area padding for notched devices */
+.safe-area-top { padding-top: var(--safe-top); }
+.safe-area-bottom { padding-bottom: var(--safe-bottom); }
+.safe-area-x { padding-left: var(--safe-left); padding-right: var(--safe-right); }
