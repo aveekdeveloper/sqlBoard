@@ -434,7 +434,7 @@ function readDashboard(deps: RouteDeps, id: number): {
     snapshot: {
       name: row.name,
       description: row.description,
-      filters: [],
+      filters: row.filtersJson ? JSON.parse(row.filtersJson) : [],
       items: items.map((item) => ({
         id: item.id,
         title: item.title,
@@ -463,6 +463,7 @@ function dashboardResponse(deps: RouteDeps, id: number) {
     id: row.id,
     name: snapshot.name,
     description: snapshot.description,
+    filters: snapshot.filters ?? [],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     latestVersion,
@@ -560,6 +561,7 @@ function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot)
     .set({
       name: snapshot.name,
       description: snapshot.description,
+      filtersJson: JSON.stringify(snapshot.filters ?? []),
       updatedAt: now,
     })
     .where(eq(dashboards.id, id))

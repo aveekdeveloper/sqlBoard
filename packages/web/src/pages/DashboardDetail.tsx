@@ -347,6 +347,7 @@ export default function DashboardDetail() {
         const response = await api.dashboards.applyState(dashboardId, {
           name: doc.name.trim(),
           description: doc.description,
+          filters: doc.filters ?? [],
           items,
           message: message ?? (kind === 'manual' ? `Commit ${doc.name}` : 'Apply dashboard code'),
           kind,

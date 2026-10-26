@@ -59,6 +59,7 @@ export const dashboards = sqliteTable('dashboards', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   description: text('description'),
+  filtersJson: text('filters_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

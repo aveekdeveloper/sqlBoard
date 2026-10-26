@@ -173,7 +173,8 @@ SELECT subcategory, category, SUM(sales) AS sales FROM products GROUP BY subcate
   const existingDashboards = db.prepare('SELECT COUNT(*) AS c FROM dashboards').get();
   if (existingDashboards.c === 0) {
     const now3 = new Date().toISOString();
-    const dashResult = db.prepare('INSERT INTO dashboards (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)').run('Sample Sales Dashboard', 'Revenue, users, and product sales overview', now3, now3);
+    const filters = [{ name: 'Region', type: 'select', connectionId: connId, sql: 'SELECT DISTINCT region FROM sales ORDER BY region', defaultValue: 'North' }, { name: 'Category', type: 'select', connectionId: connId, sql: 'SELECT DISTINCT category FROM products ORDER BY category', defaultValue: null }];
+     const dashResult = db.prepare('INSERT INTO dashboards (name, description, filters_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('Sample Sales Dashboard', 'Revenue, users, and product sales overview', JSON.stringify(filters), now3, now3);
     const dashId = dashResult.lastInsertRowid;
 
     const items = [

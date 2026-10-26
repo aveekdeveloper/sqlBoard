@@ -61,6 +61,7 @@ const BOOTSTRAP_SQL = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT,
+    filters_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -125,6 +126,11 @@ export function openDatabase(config: SqlboardConfig): OpenedDatabase {
   }
   try {
     sqlite.exec('ALTER TABLE dashboard_items ADD COLUMN saved_query_id INTEGER');
+  } catch {
+    // Column already exists.
+  }
+  try {
+    sqlite.exec('ALTER TABLE dashboards ADD COLUMN filters_json TEXT');
   } catch {
     // Column already exists.
   }

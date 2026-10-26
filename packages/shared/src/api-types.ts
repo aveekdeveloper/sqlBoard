@@ -239,6 +239,7 @@ export type DashboardLayoutUpdate = z.infer<typeof DashboardLayoutUpdateSchema>;
 export const ApplyDashboardStateSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
+  filters: z.array(z.record(z.unknown())).optional(),
   items: z.array(CreateDashboardItemSchema),
   message: z.string().optional(),
   kind: z.enum(['manual', 'apply', 'restore']).default('apply'),
@@ -263,6 +264,7 @@ export const DashboardDtoSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   description: z.string().nullable(),
+  filters: z.array(z.record(z.unknown())).default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
