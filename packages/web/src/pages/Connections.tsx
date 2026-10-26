@@ -96,143 +96,213 @@ export default function Connections() {
   }
 
   const selectedType = CONNECTION_TYPES.find((t) => t.value === type)!;
+  const inputClass =
+    'focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-faint';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Connections</h2>
-        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-[20px] font-semibold tracking-[-0.015em] text-ink">Connections</h2>
+          <p className="mt-1 text-[12.5px] text-ink-muted">
+            Manage database connections and uploaded files.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+        >
           {showForm ? 'Cancel' : '+ New connection'}
         </button>
       </div>
 
-      {status && <p className="text-sm text-gray-600 bg-gray-100 rounded px-3 py-2">{status}</p>}
+      {status && (
+        <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted">
+          {status}
+        </div>
+      )}
 
       {showForm && (
-        <form onSubmit={createConnection} className="bg-white rounded-lg shadow-sm p-4 space-y-3">
+        <form onSubmit={createConnection} className="rounded-xl border border-line bg-surface p-4 shadow-card space-y-3">
           <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select value={type} onChange={(e) => { setType(e.target.value); setForm({}); }} className="w-full border rounded px-3 py-2">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+              Type
+            </label>
+            <select
+              value={type}
+              onChange={(e) => { setType(e.target.value); setForm({}); }}
+              className={inputClass}
+            >
               {CONNECTION_TYPES.filter((t) => t.value !== 'duckdb').map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full border rounded px-3 py-2" required />
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+              Name
+            </label>
+            <input
+              value={form.name || ''}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className={inputClass}
+              required
+            />
           </div>
           {selectedType.fields.includes('host') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Host</label>
-              <input value={form.host || ''} onChange={(e) => setForm({ ...form, host: e.target.value })} className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Host</label>
+              <input value={form.host || ''} onChange={(e) => setForm({ ...form, host: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('port') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Port</label>
-              <input value={form.port || '5432'} onChange={(e) => setForm({ ...form, port: e.target.value })} type="number" className="w-full border rounded px-3 py-2" />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Port</label>
+              <input value={form.port || '5432'} onChange={(e) => setForm({ ...form, port: e.target.value })} type="number" className={inputClass} />
             </div>
           )}
           {selectedType.fields.includes('database') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Database</label>
-              <input value={form.database || ''} onChange={(e) => setForm({ ...form, database: e.target.value })} className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Database</label>
+              <input value={form.database || ''} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('user') && (
             <div>
-              <label className="block text-sm font-medium mb-1">User</label>
-              <input value={form.user || ''} onChange={(e) => setForm({ ...form, user: e.target.value })} className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">User</label>
+              <input value={form.user || ''} onChange={(e) => setForm({ ...form, user: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('password') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Password</label>
-              <input value={form.password || ''} onChange={(e) => setForm({ ...form, password: e.target.value })} type="password" className="w-full border rounded px-3 py-2" />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Password</label>
+              <input value={form.password || ''} onChange={(e) => setForm({ ...form, password: e.target.value })} type="password" className={inputClass} />
             </div>
           )}
           {selectedType.fields.includes('path') && (
             <div>
-              <label className="block text-sm font-medium mb-1">File path</label>
-              <input value={form.path || ''} onChange={(e) => setForm({ ...form, path: e.target.value })} className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">File path</label>
+              <input value={form.path || ''} onChange={(e) => setForm({ ...form, path: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('httpPath') && (
             <div>
-              <label className="block text-sm font-medium mb-1">HTTP Path</label>
-              <input value={form.httpPath || ''} onChange={(e) => setForm({ ...form, httpPath: e.target.value })} className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">HTTP Path</label>
+              <input value={form.httpPath || ''} onChange={(e) => setForm({ ...form, httpPath: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('token') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Token (PAT)</label>
-              <input value={form.token || ''} onChange={(e) => setForm({ ...form, token: e.target.value })} type="password" className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Token (PAT)</label>
+              <input value={form.token || ''} onChange={(e) => setForm({ ...form, token: e.target.value })} type="password" className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('account') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Account</label>
-              <input value={form.account || ''} onChange={(e) => setForm({ ...form, account: e.target.value })} className="w-full border rounded px-3 py-2" required />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Account</label>
+              <input value={form.account || ''} onChange={(e) => setForm({ ...form, account: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('warehouse') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Warehouse (optional)</label>
-              <input value={form.warehouse || ''} onChange={(e) => setForm({ ...form, warehouse: e.target.value })} className="w-full border rounded px-3 py-2" />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Warehouse (optional)</label>
+              <input value={form.warehouse || ''} onChange={(e) => setForm({ ...form, warehouse: e.target.value })} className={inputClass} />
             </div>
           )}
           {selectedType.fields.includes('schema') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Schema (optional)</label>
-              <input value={form.schema || ''} onChange={(e) => setForm({ ...form, schema: e.target.value })} className="w-full border rounded px-3 py-2" />
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Schema (optional)</label>
+              <input value={form.schema || ''} onChange={(e) => setForm({ ...form, schema: e.target.value })} className={inputClass} />
             </div>
           )}
-          <button type="submit" className="bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium">Create</button>
+          {selectedType.fields.includes('ssl') && (
+            <label className="flex items-center gap-2 text-[12.5px] text-ink-soft">
+              <input
+                type="checkbox"
+                checked={form.ssl === 'true'}
+                onChange={(e) => setForm({ ...form, ssl: String(e.target.checked) })}
+                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+              />
+              Use SSL
+            </label>
+          )}
+          <button
+            type="submit"
+            className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+          >
+            Create
+          </button>
         </form>
       )}
 
       {/* File upload */}
-      <div className="bg-white rounded-lg shadow-sm p-4">
-        <h3 className="font-medium mb-2">Upload a file</h3>
-        <p className="text-sm text-gray-500 mb-3">CSV, Parquet, or JSON — loaded into DuckDB as a table.</p>
-        <input type="file" accept=".csv,.parquet,.json" onChange={handleUpload} className="text-sm" />
+      <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+        <h3 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Upload a file</h3>
+        <p className="mt-1 text-[12.5px] text-ink-muted">
+          CSV, Parquet, or JSON — loaded into DuckDB as a table.
+        </p>
+        <input
+          type="file"
+          accept=".csv,.parquet,.json"
+          onChange={handleUpload}
+          className="mt-3 block text-[12px] text-ink-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-paper file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-ink"
+        />
       </div>
 
       {/* Connection list */}
       <div className="space-y-2">
         {connections.map((c) => (
-          <div key={c.id} className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between gap-3">
+          <div
+            key={c.id}
+            className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 shadow-card"
+          >
             <div className="min-w-0">
-              <div className="font-medium truncate">{c.name}</div>
-              <div className="text-sm text-gray-500">{c.type} · {c.configSummary}</div>
+              <div className="truncate text-[13px] font-medium text-ink">{c.name}</div>
+              <div className="text-[11.5px] text-ink-muted">
+                {c.type} · {c.configSummary}
+              </div>
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex shrink-0 gap-2">
               <button
                 onClick={() => testConnection(c.id)}
                 disabled={testing === c.id}
-                className="text-sm border rounded px-3 py-1.5 hover:bg-gray-50"
+                className="focus-ring rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-soft hover:border-line-strong hover:text-ink disabled:opacity-50"
               >
                 {testing === c.id ? 'Testing...' : 'Test'}
               </button>
-              <button onClick={() => deleteConnection(c.id)} className="text-sm border rounded px-3 py-1.5 text-red-600 hover:bg-red-50">
+              <button
+                onClick={() => deleteConnection(c.id)}
+                className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
+              >
                 Delete
               </button>
             </div>
           </div>
         ))}
+        {connections.length === 0 && (
+          <div className="rounded-xl border border-dashed border-line bg-surface/60 px-4 py-8 text-center text-[12.5px] text-ink-muted">
+            No connections yet. Create one or upload a file.
+          </div>
+        )}
       </div>
 
       {/* Uploads list */}
       {uploads.length > 0 && (
         <div>
-          <h3 className="font-medium mb-2">Uploaded files</h3>
+          <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+            Uploaded files
+          </h3>
           <div className="space-y-2">
             {uploads.map((u) => (
-              <div key={u.id} className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between gap-3">
+              <div
+                key={u.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 shadow-card"
+              >
                 <div className="min-w-0">
-                  <div className="font-medium truncate">{u.filename}</div>
-                  <div className="text-sm text-gray-500">table: {u.tableName} · {u.rowCount} rows · {(u.sizeBytes / 1024).toFixed(1)} KB</div>
+                  <div className="truncate text-[13px] font-medium text-ink">{u.filename}</div>
+                  <div className="text-[11.5px] text-ink-muted">
+                    table: {u.tableName} · {u.rowCount} rows · {(u.sizeBytes / 1024).toFixed(1)} KB
+                  </div>
                 </div>
                 <button
                   onClick={async () => {
@@ -245,7 +315,7 @@ export default function Connections() {
                       setStatus(e.message);
                     }
                   }}
-                  className="text-sm text-red-600 hover:underline shrink-0"
+                  className="shrink-0 text-[12px] font-medium text-signal hover:underline"
                 >
                   Delete
                 </button>
