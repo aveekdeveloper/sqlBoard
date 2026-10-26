@@ -325,6 +325,8 @@ export function parseDashboardManifest(
 
   const name = dashboardAnnotations.dashboard?.trim() || 'Untitled dashboard';
   const description = dashboardAnnotations.description?.trim() || null;
+  const dashboardTheme = dashboardAnnotations.theme?.trim();
+  const dashboardColors = dashboardAnnotations.colors?.trim();
   const byName = new Map<string, ManifestConnection>();
   for (const connection of connections) {
     const key = connection.name.trim().toLowerCase();
@@ -473,6 +475,14 @@ export function parseDashboardManifest(
         ? ''
         : [...keptAnnotations, body].join('\n').trim();
     if (type !== 'text' && savedQuery && !sql.trim()) sql = savedQuery.sql;
+    if (type === 'chart') {
+      if (dashboardTheme && !/^\s*--\s*@theme\s*:/im.test(sql)) {
+        sql = `-- @theme: ${dashboardTheme}\n${sql}`.trim();
+      }
+      if (dashboardColors && !/^\s*--\s*@colors\s*:/im.test(sql)) {
+        sql = `-- @colors: ${dashboardColors}\n${sql}`.trim();
+      }
+    }
 
     if (type !== 'text' && type !== 'chart' && !sql) {
       diagnostics.push({
