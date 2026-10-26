@@ -18,7 +18,7 @@ export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig 
   const secretKey = overrides?.secretKey ?? process.env.SECRET_KEY ?? 'dev-secret-change-me';
 
   return {
-    host: overrides?.host ?? process.env.HOST ?? '127.0.0.1',
+    host: overrides?.host ?? process.env.HOST ?? '0.0.0.0',
     port: Number(overrides?.port ?? process.env.PORT ?? 3001),
     dataDir,
     dbPath: path.join(dataDir, 'sqlboard.db'),
