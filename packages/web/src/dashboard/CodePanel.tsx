@@ -10,6 +10,7 @@ export default function CodePanel({
   diagnostics,
   dirty,
   applying,
+  editable = true,
   onChange,
   onClose,
   onApply,
@@ -21,9 +22,10 @@ export default function CodePanel({
   diagnostics: ManifestDiagnostic[];
   dirty: boolean;
   applying: boolean;
+  editable?: boolean;
   onChange: (value: string) => void;
   onClose: () => void;
-  onApply: () => void;
+  onApply?: () => void;
   onFormat: () => void;
   onNotify: (message: string) => void;
 }) {
@@ -34,15 +36,11 @@ export default function CodePanel({
   useEffect(() => {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        if (errors.length === 0 && !applying) onApply();
-      }
       if (event.key === 'Escape') onClose();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, errors.length, applying, onApply, onClose]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -108,6 +106,8 @@ export default function CodePanel({
           value={code}
           height="100%"
           theme="light"
+          editable={editable}
+          readOnly={!editable}
           extensions={[sql()]}
           basicSetup={{
             lineNumbers: true,
@@ -119,7 +119,7 @@ export default function CodePanel({
             closeBrackets: false,
             searchKeymap: true,
           }}
-          onChange={onChange}
+          onChange={editable ? onChange : () => {}}
           className="h-full text-[12.5px]"
         />
       </div>
@@ -157,7 +157,8 @@ export default function CodePanel({
         <button
           type="button"
           onClick={onFormat}
-          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-ink-muted transition-colors hover:bg-[#f1eee7] hover:text-ink"
+          disabled={!editable}
+          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-ink-muted transition-colors hover:bg-[#f1eee7] hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           title="Canonicalize the manifest"
         >
           <Wand2 size={12} />
@@ -172,17 +173,8 @@ export default function CodePanel({
           Copy
         </button>
         <span className="ml-auto hidden text-[10px] text-ink-faint sm:inline">
-          {typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl'}S
+          Use Commit to save changes
         </span>
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={errors.length > 0 || applying}
-          className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-ink px-3 py-1.5 text-[11.5px] font-medium text-surface transition-all hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Play size={12} fill="currentColor" />
-          {applying ? 'Applying…' : 'Apply code'}
-        </button>
       </footer>
     </aside>
   );

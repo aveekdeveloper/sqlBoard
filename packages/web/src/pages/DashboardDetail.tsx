@@ -913,6 +913,7 @@ export default function DashboardDetail() {
           diagnostics={diagnostics}
           dirty={dirty}
           applying={applying}
+          editable={mode === 'edit'}
           onChange={setCode}
           onClose={() => setCodeOpen(false)}
           onApply={() => void applyCode('apply')}
