@@ -140,7 +140,7 @@ function toGridLayouts(items: ManifestItem[]): GridEntry[] {
 }
 
 function blankDoc(name = 'Dashboard'): DashboardDoc {
-  return { name, description: null, filters: [], items: [] };
+  return { name, description: null, filters: [], theme: undefined, colors: undefined, items: [] };
 }
 
 export default function DashboardDetail() {
@@ -283,6 +283,8 @@ export default function DashboardDetail() {
   const [mode, setMode] = useState<Mode>('view');
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
   const [filterEditorOpen, setFilterEditorOpen] = useState(false);
+  const [themeEditorOpen, setThemeEditorOpen] = useState(false);
+  const [themeForm, setThemeForm] = useState({ theme: '', colors: '' });
   const [filterForm, setFilterForm] = useState({
     name: '',
     type: 'select',
@@ -563,6 +565,22 @@ export default function DashboardDetail() {
     [doc, manifestConnections, manifestSavedQueries, notify],
   );
 
+  const saveTheme = useCallback(() => {
+    const colors = themeForm.colors
+      .split(',')
+      .map((color) => color.trim())
+      .filter(Boolean);
+    setCode(
+      serializeDoc(
+        { ...doc, theme: themeForm.theme.trim() || undefined, colors: colors.length ? colors : undefined },
+        manifestConnections,
+        manifestSavedQueries,
+      ),
+    );
+    setThemeEditorOpen(false);
+    notify('Theme updated in the draft', 'info');
+  }, [themeForm, doc, manifestConnections, manifestSavedQueries, notify]);
+
   const removeBlock = useCallback(
     (index: number) => {
       const item = doc.items[index];
@@ -728,6 +746,17 @@ export default function DashboardDetail() {
               <Code2 size={13} />
               <span className="hidden lg:inline">Code</span>
             </Button>
+            {editing && (
+              <button
+                onClick={() => {
+                  setThemeForm({ theme: doc.theme ?? '', colors: (doc.colors ?? []).join(', ') });
+                  setThemeEditorOpen(true);
+                }}
+                className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+              >
+                Theme
+              </button>
+            )}
             {editing && (
               <button
                 onClick={() => setFilterEditorOpen(true)}
@@ -1039,6 +1068,49 @@ export default function DashboardDetail() {
               onChange={(event) => setFilterForm((current) => ({ ...current, defaultValue: event.target.value }))}
               className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
               placeholder="North"
+            />
+          </label>
+        </div>
+      </Dialog>
+      <Dialog
+        open={themeEditorOpen}
+        onClose={() => setThemeEditorOpen(false)}
+        title="Dashboard theme"
+        description="Set a default theme for charts. Block-level @theme still overrides."
+        width="max-w-md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setThemeEditorOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={saveTheme}>
+              Apply theme
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Default theme</span>
+            <select
+              value={themeForm.theme}
+              onChange={(event) => setThemeForm((current) => ({ ...current, theme: event.target.value }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+            >
+              <option value="">None</option>
+              <option value="swiss">Swiss (default)</option>
+              <option value="powerbi-light">Power BI light</option>
+              <option value="nyt">New York Times</option>
+              <option value="economist">Economist</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Custom colors (comma-separated)</span>
+            <input
+              value={themeForm.colors}
+              onChange={(event) => setThemeForm((current) => ({ ...current, colors: event.target.value }))}
+              className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+              placeholder="#1d5c4a, #c8412f, #a56b1f"
             />
           </label>
         </div>

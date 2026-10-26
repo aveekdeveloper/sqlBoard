@@ -37,6 +37,8 @@ export interface ManifestDashboard {
   name: string;
   description: string | null;
   filters: ManifestFilter[];
+  theme?: string;
+  colors?: string[];
   items: ManifestItem[];
 }
 
@@ -248,6 +250,8 @@ export function serializeDashboardManifest(
   ];
   if (dashboard.description) lines.push(`-- @description: ${oneLine(dashboard.description)}`);
   lines.push('-- @grid: 12');
+  if (dashboard.theme) lines.push(`-- @theme: ${oneLine(dashboard.theme)}`);
+  if (dashboard.colors?.length) lines.push(`-- @colors: ${dashboard.colors.map(oneLine).join(', ')}`);
 
   for (const filter of dashboard.filters) {
     const connection = filter.connectionId ? byId.get(filter.connectionId) : undefined;
@@ -577,7 +581,7 @@ export function parseDashboardManifest(
   }
 
   return {
-    dashboard: { name, description, filters, items },
+    dashboard: { name, description, filters, theme: dashboardTheme, colors: dashboardColors ? dashboardColors.split(',').map((c) => c.trim()).filter(Boolean) : undefined, items },
     diagnostics,
   };
 }

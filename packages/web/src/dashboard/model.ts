@@ -19,6 +19,8 @@ export interface DashboardDoc {
   name: string;
   description: string | null;
   filters: ManifestFilter[];
+  theme?: string;
+  colors?: string[];
   items: ManifestItem[];
 }
 
@@ -102,12 +104,16 @@ export function dashboardToDoc(
     description: string | null;
     items: DashboardItemDto[];
     filters?: ManifestFilter[] | Record<string, unknown>[];
+    theme?: string;
+    colors?: string[];
   },
 ): DashboardDoc {
   return {
     name: dashboard.name,
     description: dashboard.description,
     filters: (dashboard.filters ?? []) as ManifestFilter[],
+    theme: dashboard.theme,
+    colors: dashboard.colors,
     items: dashboard.items.map((item) => ({
       id: item.id,
       title: item.title,
