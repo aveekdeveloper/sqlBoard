@@ -4,6 +4,7 @@ import type { EChartsOption } from 'echarts';
 import { useChartSpec } from './queries.js';
 import type { ManifestItem } from './model.js';
 import { BlockEmpty, BlockError, BlockLoading } from './BlockState.js';
+import { applyEChartsTheme } from './echartsThemes.js';
 
 const FONT_STACK =
   "Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif";
@@ -116,7 +117,11 @@ export default function ChartBody({
   const chartRef = useRef<echarts.ECharts | null>(null);
   const { data, isLoading, isError, error, refetch } = useChartSpec(item, true, filterValues);
 
-  const option = useMemo(() => (data?.option ? buildOption(data.option) : null), [data]);
+  const option = useMemo(() => {
+    if (!data?.option) return null;
+    const built = buildOption(data.option);
+    return applyEChartsTheme(built as Record<string, unknown>, item.sql) as EChartsOption;
+  }, [data, item.sql]);
 
   useEffect(() => {
     const element = containerRef.current;
