@@ -91,18 +91,23 @@ function Shell({ children }: { children: React.ReactNode }) {
   const token = getToken();
   const location = useLocation();
   if (!token) return <Navigate to="/login" replace />;
+  const isDashboardDetail = /^\/dashboards\/[^/]+\/?$/.test(location.pathname);
   return (
-    <div className="min-h-screen flex flex-col safe-area-top safe-area-bottom safe-area-x">
-      <nav className="hidden md:flex items-center gap-1 px-4 py-2 border-b border-gray-200 bg-white">
-        <span className="font-semibold mr-4">sqlboard</span>
+    <div
+      className={`flex flex-col safe-area-top safe-area-bottom safe-area-x ${
+        isDashboardDetail ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
+      }`}
+    >
+      <nav className="hidden md:flex items-center gap-1 px-4 py-2 border-b border-line bg-surface">
+        <span className="font-semibold mr-4 text-ink">sqlboard</span>
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.path}
             to={item.path}
-            className={`px-3 py-1.5 rounded text-sm font-medium ${
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
               location.pathname.startsWith(item.path)
-                ? 'bg-blue-50 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'bg-accent-soft text-accent-ink'
+                : 'text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
             }`}
           >
             {item.label}
@@ -110,35 +115,45 @@ function Shell({ children }: { children: React.ReactNode }) {
         ))}
         <button
           onClick={() => { setToken(null); window.location.href = '/login'; }}
-          className="ml-auto text-sm text-gray-500 hover:text-gray-700"
+          className="ml-auto text-sm text-ink-muted hover:text-ink"
         >
           Sign out
         </button>
       </nav>
 
-      <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
-        <span className="font-semibold">sqlboard</span>
-        <button
-          onClick={() => { setToken(null); window.location.href = '/login'; }}
-          className="text-sm text-gray-500"
-        >
-          Sign out
-        </button>
-      </header>
+      {!isDashboardDetail && (
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-line bg-surface">
+          <span className="font-semibold text-ink">sqlboard</span>
+          <button
+            onClick={() => { setToken(null); window.location.href = '/login'; }}
+            className="text-sm text-ink-muted"
+          >
+            Sign out
+          </button>
+        </header>
+      )}
 
-      <main className="flex-1 overflow-auto pb-16 md:pb-0">
-        <div className="max-w-7xl mx-auto p-4 md:p-6">
-          {children}
-        </div>
+      <main
+        className={
+          isDashboardDetail
+            ? 'min-h-0 flex-1 overflow-hidden pb-16 md:pb-0'
+            : 'flex-1 overflow-auto pb-16 md:pb-0'
+        }
+      >
+        {isDashboardDetail ? (
+          <div className="h-full">{children}</div>
+        ) : (
+          <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
+        )}
       </main>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-1 safe-area-bottom z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line flex justify-around py-1 safe-area-bottom z-50">
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.path}
             to={item.path}
             className={`flex flex-col items-center py-1 px-2 text-xs ${
-              location.pathname.startsWith(item.path) ? 'text-blue-600' : 'text-gray-500'
+              location.pathname.startsWith(item.path) ? 'text-accent' : 'text-ink-muted'
             }`}
           >
             <span className="text-lg">{item.icon}</span>

@@ -1,240 +1,913 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as echarts from 'echarts';
-import MetricTile from '../components/MetricTile.js';
-import DigestStrip, { computeDigestSignals } from '../components/DigestStrip.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import GridLayout from 'react-grid-layout';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Code2,
+  Eye,
+  GitBranch,
+  History as HistoryIcon,
+  LayoutGrid,
+  Loader2,
+  Pencil,
+  Plus,
+  RotateCcw,
+} from 'lucide-react';
 import { api } from '../api/client.js';
+import type { DashboardDetailDto, DashboardVersionSummary } from '../api/client.js';
+import type { Layout } from '@sqlboard/shared';
+import {
+  BLOCK_META,
+  appendItem,
+  attachIds,
+  blockKey,
+  dashboardToDoc,
+  normalizeLayout,
+  parseDoc,
+  relativeTime,
+  serializeDoc,
+  withItemAt,
+  withLayouts,
+  withoutItemAt,
+  type DashboardBlockType,
+  type DashboardDoc,
+  type ManifestDiagnostic,
+  type ManifestItem,
+} from '../dashboard/model.js';
+import { BlockCard } from '../dashboard/BlockCard.js';
+import AddBlockMenu from '../dashboard/AddBlockMenu.js';
+import BlockEditor from '../dashboard/BlockEditor.js';
+import CodePanel from '../dashboard/CodePanel.js';
+import CommitDialog from '../dashboard/CommitDialog.js';
+import HistoryDialog from '../dashboard/HistoryDialog.js';
+import { Button, Segmented, Toast, type ToastMessage } from '../dashboard/ui.js';
 
-const BACKENDS = ['echarts', 'vegalite', 'chartjs', 'plotly'];
+const Grid = GridLayout.WidthProvider(GridLayout);
 
-function ChartBlock({ item, backend }: { item: any; backend: string }) {
-  const chartRef = useRef<HTMLDivElement>(null);
-  const instRef = useRef<any>(null);
+const ROW_HEIGHT = 36;
+const MOBILE_HEIGHT: Record<DashboardBlockType, number> = {
+  chart: 300,
+  metric: 150,
+  table: 360,
+  text: 220,
+};
 
-  useEffect(() => {
-    if (!chartRef.current) return;
-    let cancelled = false;
-
-    async function render() {
-      try {
-        const res = await api.compile({ sql: item.sql, connectionId: item.connectionId, backends: [backend] });
-        if (cancelled) return;
-        const spec = res.compiled?.[backend] || res.echarts;
-        if (!spec) return;
-        if (!instRef.current) instRef.current = echarts.init(chartRef.current!);
-        instRef.current.setOption(spec, true);
-        setTimeout(() => { try { instRef.current?.resize(); } catch (e) {} }, 50);
-      } catch (e: any) {
-        if (chartRef.current) chartRef.current.innerHTML = `<div class="text-red-600 text-sm p-2">Error: ${e.message}</div>`;
-      }
-    }
-
-    render();
-    return () => { cancelled = true; if (instRef.current) { try { instRef.current.dispose(); } catch (e) {} instRef.current = null; } };
-  }, [item, backend]);
-
-  return <div ref={chartRef} className="w-full h-64" />;
+interface GridEntry {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  minH?: number;
 }
 
-function MetricBlock({ item }: { item: any }) {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+interface StoredDraft {
+  code: string;
+  savedAt: string;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await api.compile({ sql: item.sql, connectionId: item.connectionId });
-        if (cancelled) return;
-        // The compile endpoint also runs the query if connectionId is provided
-        // For metrics, we need the raw query result. Use the query endpoint instead.
-        const qRes = await api.connections.query(item.connectionId, item.sql);
-        if (cancelled) return;
-        setData(qRes);
-      } catch (e) {
-        console.error('Metric load failed:', e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [item]);
+type ToastTone = 'success' | 'error' | 'info';
+type Mode = 'view' | 'edit';
+type CommitKind = 'apply' | 'manual';
 
-  const config = item.config || {};
-  const result = data ? interpretMetricResult(data) : null;
+function draftKeyFor(id: number): string {
+  return `sqlboard:dashboard-draft:${id}`;
+}
 
-  return (
-    <MetricTile
-      title={item.title}
-      value={result?.value ?? null}
-      prior={result?.prior ?? null}
-      higherIsBetter={config.higherIsBetter ?? true}
-      format={config.format || 'number'}
-      target={config.target}
-      sparkline={result?.sparkline}
-      loading={loading}
-    />
+function readDraft(key: string): StoredDraft | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredDraft>;
+    return typeof parsed.code === 'string' ? { code: parsed.code, savedAt: parsed.savedAt ?? '' } : null;
+  } catch {
+    return null;
+  }
+}
+
+function contentSignature(doc: DashboardDoc | null): string {
+  if (!doc) return '';
+  return JSON.stringify({
+    name: doc.name,
+    description: doc.description,
+    items: doc.items.map((item) => ({
+      title: item.title,
+      sql: item.sql,
+      connectionId: item.connectionId,
+      blockType: item.blockType,
+      config: item.config,
+    })),
+  });
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
   );
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, [query]);
+
+  return matches;
 }
 
-function interpretMetricResult(qr: any): { value: number | null; prior: number | null; sparkline?: { t: string; v: number }[] } {
-  const rows = qr?.rows || [];
-  if (rows.length === 0) return { value: null, prior: null };
-
-  // Single row with value + prior columns
-  const first = rows[0];
-  if (rows.length === 1) {
-    const value = first.value ?? first.current ?? first.metric ?? first.result ?? first.amount ?? Object.values(first)[0];
-    const prior = first.prior ?? first.previous ?? first.prior_value ?? first.prev ?? null;
-    return { value: toNum(value), prior: toNum(prior) };
-  }
-
-  // Time series: date column + value column
-  const cols = qr.columns || Object.keys(first);
-  const timeCol = cols.find((c: string) => /month|date|day|week|quarter|year|time|period/i.test(c) && !Number.isFinite(Number(first[c])));
-  const valueCol = cols.find((c: string) => /value|current|metric|result|amount|revenue|count/i.test(c)) || cols.find((c: string) => rows.some((r: any) => Number.isFinite(Number(r[c]))));
-  if (timeCol && valueCol) {
-    const points = rows.map((r: any) => ({ t: String(r[timeCol]), v: Number(r[valueCol]) })).filter((p: any) => Number.isFinite(p.v));
-    const last = points[points.length - 1];
-    const prev = points.length > 1 ? points[points.length - 2] : null;
-    return { value: last?.v ?? null, prior: prev?.v ?? null, sparkline: points };
-  }
-
-  // Fallback: first numeric column
-  const numCol = cols.find((c: string) => rows.some((r: any) => Number.isFinite(Number(r[c]))));
-  return { value: numCol ? Number(rows[rows.length - 1][numCol]) : null, prior: null };
+function toGridLayouts(items: ManifestItem[]): GridEntry[] {
+  return items.map((item, index) => {
+    const meta = BLOCK_META[item.blockType];
+    const layout = normalizeLayout(item.layout);
+    return {
+      i: blockKey(index),
+      x: layout.x,
+      y: layout.y,
+      w: Math.max(meta.minW, layout.w),
+      h: Math.max(meta.minH, layout.h),
+      minW: meta.minW,
+      minH: meta.minH,
+    };
+  });
 }
 
-function toNum(v: any): number | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+function blankDoc(name = 'Dashboard'): DashboardDoc {
+  return { name, description: null, items: [] };
 }
 
 export default function DashboardDetail() {
-  const { id } = useParams();
-  const dashId = Number(id);
-  const qc = useQueryClient();
-  const [backend, setBackend] = useState('echarts');
-  const [pinning, setPinning] = useState(false);
-  const [pinSql, setPinSql] = useState('');
-  const [pinTitle, setPinTitle] = useState('');
-  const [pinConnId, setPinConnId] = useState<number | null>(null);
-  const [pinBlockType, setPinBlockType] = useState<'chart' | 'metric'>('chart');
+  const params = useParams();
+  const dashboardId = Number(params.id);
+  const validId = Number.isFinite(dashboardId) && dashboardId > 0;
+  const queryClient = useQueryClient();
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const draftKey = draftKeyFor(dashboardId);
 
-  const { data: dashboard } = useQuery({
-    queryKey: ['dashboard', dashId],
-    queryFn: () => api.dashboards.get(dashId),
+  const dashboardQuery = useQuery({
+    queryKey: ['dashboard', dashboardId],
+    queryFn: () => api.dashboards.get(dashboardId),
+    enabled: validId,
   });
-
-  const { data: connections } = useQuery({
+  const connectionsQuery = useQuery({
     queryKey: ['connections'],
     queryFn: () => api.connections.list(),
+    staleTime: 60_000,
   });
 
-  const addItem = useMutation({
-    mutationFn: (body: any) => api.dashboards.addItem(dashId, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dashboard', dashId] }); setPinning(false); },
+  const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
+  const manifestConnections = useMemo(
+    () => connections.map((connection) => ({ id: connection.id, name: connection.name })),
+    [connections],
+  );
+
+  const dashboard = dashboardQuery.data;
+  const serverDoc = useMemo(() => (dashboard ? dashboardToDoc(dashboard) : null), [dashboard]);
+  const appliedCode = useMemo(
+    () => (serverDoc ? serializeDoc(serverDoc, manifestConnections) : ''),
+    [serverDoc, manifestConnections],
+  );
+
+  const [code, setCode] = useState('');
+  const [ready, setReady] = useState(false);
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+  const initRef = useRef(false);
+
+  useEffect(() => {
+    initRef.current = false;
+    setReady(false);
+    setCode('');
+    setRestoredAt(null);
+  }, [dashboardId]);
+
+  useEffect(() => {
+    if (initRef.current) return;
+    if (!serverDoc || !connectionsQuery.data) return;
+    initRef.current = true;
+    const canonical = serializeDoc(serverDoc, manifestConnections);
+    const stored = readDraft(draftKey);
+    if (stored && stored.code.trim().length > 0 && stored.code.trim() !== canonical.trim()) {
+      setCode(stored.code);
+      setRestoredAt(stored.savedAt);
+    } else {
+      setCode(canonical);
+    }
+    setReady(true);
+  }, [serverDoc, connectionsQuery.data, manifestConnections, draftKey]);
+
+  const parsed = useMemo(() => {
+    try {
+      const result = parseDoc(code, manifestConnections);
+      return { doc: result.doc, diagnostics: result.diagnostics };
+    } catch (error) {
+      const diagnostic: ManifestDiagnostic = {
+        severity: 'error',
+        code: 'PARSE_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+      };
+      return { doc: blankDoc(), diagnostics: [diagnostic] };
+    }
+  }, [code, manifestConnections]);
+
+  const doc = parsed.doc;
+  const diagnostics = parsed.diagnostics;
+  const errors = useMemo(
+    () => diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
+    [diagnostics],
+  );
+
+  const dirty = useMemo(
+    () => Boolean(serverDoc) && ready && contentSignature(doc) !== contentSignature(serverDoc),
+    [serverDoc, ready, doc],
+  );
+
+  const latestVersion = dashboard?.latestVersion ?? 0;
+  const blockCount = doc.items.length;
+
+  useEffect(() => {
+    if (!ready || !serverDoc) return;
+    const timer = window.setTimeout(() => {
+      try {
+        if (code.trim() === appliedCode.trim()) {
+          localStorage.removeItem(draftKey);
+        } else {
+          localStorage.setItem(
+            draftKey,
+            JSON.stringify({ code, savedAt: new Date().toISOString() } satisfies StoredDraft),
+          );
+        }
+      } catch {
+        // Storage can be unavailable in private mode; the draft still lives in memory.
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [code, ready, serverDoc, appliedCode, draftKey]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [dirty]);
+
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const notify = useCallback((text: string, tone: ToastTone = 'success') => {
+    setToast({ id: Date.now(), text, tone });
+  }, []);
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  const [mode, setMode] = useState<Mode>('view');
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [commitOpen, setCommitOpen] = useState(false);
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editorType, setEditorType] = useState<DashboardBlockType>('chart');
+
+  const [applying, setApplying] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [savingLayout, setSavingLayout] = useState(false);
+
+  const versionsQuery = useQuery({
+    queryKey: ['dashboard-versions', dashboardId],
+    queryFn: () => api.dashboards.listVersions(dashboardId),
+    enabled: validId && historyOpen,
+    staleTime: 10_000,
   });
 
-  const removeItem = useMutation({
-    mutationFn: (itemId: number) => api.dashboards.removeItem(dashId, itemId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard', dashId] }),
-  });
+  const adoptDashboard = useCallback(
+    (next: DashboardDetailDto, message: string, tone: ToastTone = 'success') => {
+      queryClient.setQueryData(['dashboard', dashboardId], next);
+      const nextDoc = dashboardToDoc(next);
+      setCode(serializeDoc(nextDoc, manifestConnections));
+      setRestoredAt(null);
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        // ignore storage failures
+      }
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-versions', dashboardId] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+      notify(message, tone);
+    },
+    [queryClient, dashboardId, manifestConnections, draftKey, notify],
+  );
 
-  const asCode = (dashboard?.items || []).map((item: any) =>
-    `-- ========== ${item.title} (${item.blockType}) ==========\n${item.sql.trim()}\n`
-  ).join('\n');
+  const applyCode = useCallback(
+    async (kind: CommitKind = 'apply', message?: string) => {
+      if (!serverDoc) return;
+      if (errors.length > 0) {
+        notify('Fix the manifest errors before applying.', 'error');
+        setCodeOpen(true);
+        return;
+      }
+      if (!doc.name.trim()) {
+        notify('Give the dashboard a name before applying.', 'error');
+        setCodeOpen(true);
+        return;
+      }
 
-  const metricItems = (dashboard?.items || []).filter((i: any) => i.blockType === 'metric');
-  const digestSignals = metricItems.map((item: any) => {
-    // placeholder — real digest would compute from metric results
-    return null;
-  }).filter(Boolean);
+      setApplying(true);
+      try {
+        const items = doc.items.map((item) => ({
+          title: item.title.trim() || 'Untitled block',
+          sql: item.sql,
+          connectionId: item.blockType === 'text' ? 0 : item.connectionId,
+          blockType: item.blockType,
+          config: item.config ?? undefined,
+          layout: normalizeLayout(item.layout),
+        }));
+        const response = await api.dashboards.applyState(dashboardId, {
+          name: doc.name.trim(),
+          description: doc.description,
+          items,
+          message: message ?? (kind === 'manual' ? `Commit ${doc.name}` : 'Apply dashboard code'),
+          kind,
+        });
+        adoptDashboard(
+          response,
+          kind === 'manual'
+            ? `Committed as v${response.version.version}`
+            : `Applied as v${response.version.version}`,
+        );
+        setCommitOpen(false);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      } finally {
+        setApplying(false);
+      }
+    },
+    [serverDoc, errors.length, doc, dashboardId, adoptDashboard, notify],
+  );
+
+  const commit = useCallback(
+    async (message: string) => {
+      if (errors.length > 0) {
+        notify('Fix the manifest errors before committing.', 'error');
+        setCodeOpen(true);
+        return;
+      }
+      setCommitting(true);
+      try {
+        if (dirty) {
+          await applyCode('manual', message);
+          return;
+        }
+        const version = await api.dashboards.commitVersion(dashboardId, message);
+        queryClient.setQueryData<DashboardDetailDto>(['dashboard', dashboardId], (current) =>
+          current ? { ...current, latestVersion: version.version } : current,
+        );
+        void queryClient.invalidateQueries({ queryKey: ['dashboard-versions', dashboardId] });
+        void queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+        setCommitOpen(false);
+        notify(`Committed as v${version.version}`);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      } finally {
+        setCommitting(false);
+      }
+    },
+    [errors.length, dirty, applyCode, queryClient, dashboardId, notify],
+  );
+
+  const restore = useCallback(
+    async (version: number) => {
+      setRestoring(true);
+      try {
+        const response = await api.dashboards.restoreVersion(dashboardId, version);
+        adoptDashboard(
+          response,
+          `Restored v${version} as v${response.version.version}`,
+        );
+        setHistoryOpen(false);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      } finally {
+        setRestoring(false);
+      }
+    },
+    [adoptDashboard, dashboardId, notify],
+  );
+
+  const persistLayout = useCallback(
+    async (next: GridEntry[]) => {
+      if (!serverDoc || !ready) return;
+      const layouts: Record<string, Layout> = {};
+      for (const entry of next) {
+        layouts[entry.i] = normalizeLayout({
+          x: entry.x,
+          y: entry.y,
+          w: entry.w,
+          h: entry.h,
+        });
+      }
+      const nextDoc = withLayouts(doc, layouts);
+      setCode(serializeDoc(nextDoc, manifestConnections));
+
+      const withIds = attachIds(nextDoc.items, serverDoc.items);
+      const updates = withIds.flatMap((item) =>
+        item.id === undefined ? [] : [{ id: item.id, layout: item.layout }],
+      );
+      if (updates.length === 0) return;
+
+      setSavingLayout(true);
+      try {
+        const response = await api.dashboards.saveLayout(dashboardId, updates);
+        queryClient.setQueryData(['dashboard', dashboardId], response);
+      } catch (error) {
+        notify(
+          `Layout could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+          'error',
+        );
+      } finally {
+        setSavingLayout(false);
+      }
+    },
+    [serverDoc, ready, doc, manifestConnections, dashboardId, queryClient, notify],
+  );
+
+  const formatManifest = useCallback(() => {
+    if (errors.length > 0) {
+      notify('Fix the manifest errors before formatting.', 'error');
+      return;
+    }
+    setCode(serializeDoc(doc, manifestConnections));
+    notify('Manifest formatted', 'info');
+  }, [errors.length, doc, manifestConnections, notify]);
+
+  const discardDraft = useCallback(() => {
+    setCode(appliedCode);
+    setRestoredAt(null);
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // ignore storage failures
+    }
+    notify('Draft discarded', 'info');
+  }, [appliedCode, draftKey, notify]);
+
+  const openAdd = useCallback(
+    (type: DashboardBlockType) => {
+      if (type !== 'text' && connections.length === 0) {
+        notify('Add a connection before creating query blocks.', 'error');
+        return;
+      }
+      setEditingIndex(null);
+      setEditorType(type);
+      setEditorOpen(true);
+      setMode('edit');
+    },
+    [connections.length, notify],
+  );
+
+  const openEdit = useCallback((index: number) => {
+    setEditingIndex(index);
+    setEditorOpen(true);
+    setMode('edit');
+  }, []);
+
+  const saveBlock = useCallback(
+    (item: ManifestItem) => {
+      const nextDoc =
+        editingIndex === null ? appendItem(doc, item) : withItemAt(doc, editingIndex, item);
+      setCode(serializeDoc(nextDoc, manifestConnections));
+      setEditorOpen(false);
+      notify(
+        editingIndex === null
+          ? `"${item.title}" added to the draft`
+          : `"${item.title}" updated in the draft`,
+        'info',
+      );
+    },
+    [editingIndex, doc, manifestConnections, notify],
+  );
+
+  const removeBlock = useCallback(
+    (index: number) => {
+      const item = doc.items[index];
+      if (!item) return;
+      if (!window.confirm(`Remove "${item.title}" from the draft?`)) return;
+      setCode(serializeDoc(withoutItemAt(doc, index), manifestConnections));
+      notify(`"${item.title}" removed from the draft`, 'info');
+    },
+    [doc, manifestConnections, notify],
+  );
+
+  const loadVersionCode = useCallback(
+    (nextCode: string) => {
+      setCode(nextCode);
+      setHistoryOpen(false);
+      setCodeOpen(true);
+      notify('Version loaded into the code editor', 'info');
+    },
+    [notify],
+  );
+
+  const gridLayouts = useMemo(() => toGridLayouts(doc.items), [doc.items]);
+  const editing = isDesktop && mode === 'edit';
+  const canArrange = editing && errors.length === 0;
+  const mobileItems = useMemo(
+    () =>
+      doc.items
+        .map((item, index) => ({ item, index }))
+        .sort(
+          (left, right) =>
+            left.item.layout.y - right.item.layout.y ||
+            left.item.layout.x - right.item.layout.x,
+        ),
+    [doc.items],
+  );
+
+  if (!validId) {
+    return (
+      <div className="flex h-full items-center justify-center px-6">
+        <div className="text-center">
+          <div className="text-[15px] font-semibold text-ink">Dashboard not found</div>
+          <Link
+            to="/dashboards"
+            className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-accent hover:underline"
+          >
+            <ArrowLeft size={13} /> Back to dashboards
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (dashboardQuery.isLoading || !ready) {
+    return <DashboardSkeleton />;
+  }
+
+  if (dashboardQuery.isError || !dashboard) {
+    return (
+      <div className="flex h-full items-center justify-center px-6">
+        <div className="max-w-sm text-center">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-signal-soft text-signal">
+            <AlertTriangle size={18} />
+          </div>
+          <div className="mt-3 text-[15px] font-semibold text-ink">Could not load dashboard</div>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
+            {dashboardQuery.error instanceof Error
+              ? dashboardQuery.error.message
+              : 'The dashboard request failed.'}
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Button variant="secondary" onClick={() => void dashboardQuery.refetch()}>
+              Retry
+            </Button>
+            <Link
+              to="/dashboards"
+              className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium text-ink-muted hover:text-ink"
+            >
+              <ArrowLeft size={13} /> Back
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-semibold">{dashboard?.name || 'Dashboard'}</h2>
-        <div className="flex gap-2 items-center flex-wrap">
-          <select value={backend} onChange={(e) => setBackend(e.target.value)} className="border rounded px-3 py-2 text-sm">
-            {BACKENDS.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-          <button onClick={() => setPinning(!pinning)} className="bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium">
-            {pinning ? 'Cancel' : '+ Pin'}
-          </button>
-        </div>
-      </div>
-
-      {pinning && (
-        <div className="bg-white rounded-lg shadow-sm p-4 space-y-3">
-          <h3 className="font-medium">Pin a new block</h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPinBlockType('chart')}
-              className={`px-3 py-1.5 rounded text-sm ${pinBlockType === 'chart' ? 'bg-blue-600 text-white' : 'border'}`}
-            >
-              Chart
-            </button>
-            <button
-              onClick={() => setPinBlockType('metric')}
-              className={`px-3 py-1.5 rounded text-sm ${pinBlockType === 'metric' ? 'bg-blue-600 text-white' : 'border'}`}
-            >
-              Metric
-            </button>
-          </div>
-          <input value={pinTitle} onChange={(e) => setPinTitle(e.target.value)} placeholder="Title" className="w-full border rounded px-3 py-2" />
-          <select value={pinConnId ?? ''} onChange={(e) => setPinConnId(Number(e.target.value))} className="w-full border rounded px-3 py-2">
-            <option value="">Select connection...</option>
-            {(connections || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <textarea value={pinSql} onChange={(e) => setPinSql(e.target.value)} placeholder="-- @viz: bar&#10;-- @x: month&#10;-- @y: revenue&#10;SELECT ..." rows={6} className="w-full border rounded px-3 py-2 font-mono text-sm" />
-          {pinBlockType === 'metric' && (
-            <p className="text-xs text-gray-500">Metric SQL: single value, or value+prior columns, or time series (date+value). Target/polarity set after pinning via edit.</p>
-          )}
-          <button
-            onClick={() => {
-              if (!pinTitle || !pinConnId || !pinSql) return;
-              addItem.mutate({ title: pinTitle, sql: pinSql, connectionId: pinConnId, blockType: pinBlockType, layout: { x: 0, y: 0, w: pinBlockType === 'metric' ? 2 : 6, h: pinBlockType === 'metric' ? 2 : 4 } });
-            }}
-            disabled={addItem.isPending}
-            className="bg-green-600 text-white rounded px-4 py-2 text-sm font-medium disabled:opacity-50"
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-paper">
+      <header className="relative z-20 shrink-0 border-b border-line bg-surface/95 backdrop-blur">
+        <div className="flex items-center gap-2.5 px-3 py-2.5 md:gap-3 md:px-5 md:py-3">
+          <Link
+            to="/dashboards"
+            className="focus-ring flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-[#f1eee7] hover:text-ink"
+            aria-label="Back to dashboards"
           >
-            {addItem.isPending ? 'Pinning...' : 'Pin'}
-          </button>
-        </div>
-      )}
+            <ArrowLeft size={16} strokeWidth={1.9} />
+          </Link>
 
-      {/* Dashboard canvas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {(!dashboard?.items || dashboard.items.length === 0) && (
-          <div className="col-span-full text-center text-gray-400 py-12">
-            No blocks yet. Click "+ Pin" to add a chart or metric.
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-[14.5px] font-semibold tracking-[-0.015em] text-ink md:text-[16px]">
+                {doc.name || 'Untitled dashboard'}
+              </h1>
+              {dirty && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#fbf3e5] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-warning">
+                  <span className="h-1 w-1 rounded-full bg-warning" />
+                  Draft
+                </span>
+              )}
+              <span className="hidden shrink-0 items-center gap-1 rounded-full bg-[#f1eee7] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-ink-muted sm:inline-flex">
+                {latestVersion > 0 ? `v${latestVersion}` : 'No version'}
+              </span>
+              {savingLayout && (
+                <span className="hidden items-center gap-1 text-[9.5px] text-ink-faint sm:inline-flex">
+                  <Loader2 size={10} className="animate-spin" /> saving layout
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-ink-muted md:text-[10.5px]">
+              {doc.description && (
+                <>
+                  <span className="truncate">{doc.description}</span>
+                  <span className="text-ink-faint">·</span>
+                </>
+              )}
+              <span className="shrink-0 tabular">
+                {blockCount} block{blockCount === 1 ? '' : 's'}
+              </span>
+              <span className="hidden text-ink-faint sm:inline">·</span>
+              <span className="hidden shrink-0 sm:inline">
+                updated {relativeTime(dashboard.updatedAt)}
+              </span>
+              <span className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-1.5 py-0.5 text-[8.5px] uppercase tracking-[0.08em] text-ink-faint md:hidden">
+                Read-only
+              </span>
+            </div>
+          </div>
+
+          <div className="hidden items-center gap-1.5 md:flex">
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'view', label: 'View', icon: <Eye size={12} /> },
+                { value: 'edit', label: 'Edit', icon: <Pencil size={12} /> },
+              ]}
+            />
+            <span className="mx-0.5 h-5 w-px bg-line" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setHistoryOpen(true)}
+              title="Version history"
+            >
+              <HistoryIcon size={13} />
+              <span className="hidden lg:inline">History</span>
+            </Button>
+            <Button
+              variant={codeOpen ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setCodeOpen((current) => !current)}
+              title="Dashboard code"
+            >
+              <Code2 size={13} />
+              <span className="hidden lg:inline">Code</span>
+            </Button>
+            {editing && <AddBlockMenu onSelect={openAdd} />}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setCommitOpen(true)}
+              disabled={committing || applying}
+              title="Commit a version"
+            >
+              {committing ? <Loader2 size={12} className="animate-spin" /> : <GitBranch size={12} />}
+              <span className="hidden sm:inline">{dirty ? 'Commit draft' : 'Commit'}</span>
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-1 md:hidden">
+            <span className="rounded-full bg-[#f1eee7] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-ink-muted">
+              {latestVersion > 0 ? `v${latestVersion}` : 'Read-only'}
+            </span>
+          </div>
+        </div>
+
+        {restoredAt && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-[#ecd9b6] bg-[#fbf3e5] px-3 py-1.5 text-[10.5px] text-warning md:px-5">
+            <RotateCcw size={11} strokeWidth={2} />
+            <span className="min-w-0">
+              Unsaved draft restored{restoredAt ? ` from ${new Date(restoredAt).toLocaleString()}` : ''}.
+            </span>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="font-medium underline decoration-warning/40 underline-offset-2 hover:decoration-warning"
+            >
+              Discard draft
+            </button>
+            <button
+              type="button"
+              onClick={() => setRestoredAt(null)}
+              className="ml-auto text-ink-muted hover:text-ink"
+            >
+              Keep editing
+            </button>
           </div>
         )}
-        {(dashboard?.items || []).map((item: any) => (
-          <div key={item.id} className="bg-white rounded-lg shadow-sm p-3 relative">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-sm truncate">{item.title}</span>
-              <button onClick={() => removeItem.mutate(item.id)} className="text-red-500 text-lg px-2 hover:bg-red-50 rounded">×</button>
-            </div>
-            {item.blockType === 'metric' ? (
-              <MetricBlock item={item} />
+      </header>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <main className="min-w-0 flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-[1600px] px-3 py-3 md:px-5 md:py-5">
+            {!isDesktop && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-[10.5px] leading-snug text-ink-muted">
+                <LayoutGrid size={13} className="shrink-0 text-ink-faint" />
+                Mobile view is read-only. Blocks are stacked in reading order; open on a desktop to
+                rearrange them.
+              </div>
+            )}
+
+            {errors.length > 0 && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-signal/25 bg-signal-soft px-3 py-2 text-[10.5px] leading-snug text-signal">
+                <AlertTriangle size={13} className="shrink-0" />
+                <span className="min-w-0 flex-1">
+                  {errors.length} manifest error{errors.length === 1 ? '' : 's'}:{' '}
+                  <span className="text-signal/85">{errors[0]?.message}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCodeOpen(true)}
+                  className="font-medium underline decoration-signal/40 underline-offset-2 hover:decoration-signal"
+                >
+                  Open code
+                </button>
+              </div>
+            )}
+
+            {doc.items.length === 0 ? (
+              <EmptyDashboard
+                canEdit={isDesktop}
+                onAdd={() => openAdd('chart')}
+                onCode={() => setCodeOpen(true)}
+              />
+            ) : isDesktop ? (
+              <div className={`grid-surface ${editing ? 'is-editing' : ''}`}>
+                <Grid
+                  className="layout"
+                  layout={gridLayouts}
+                  cols={12}
+                  rowHeight={ROW_HEIGHT}
+                  margin={[12, 12]}
+                  containerPadding={[0, 0]}
+                  isDraggable={canArrange}
+                  isResizable={canArrange}
+                  draggableHandle=".block-drag-handle"
+                  compactType="vertical"
+                  preventCollision={false}
+                  useCSSTransforms
+                  onDragStop={(layout) => void persistLayout(layout)}
+                  onResizeStop={(layout) => void persistLayout(layout)}
+                >
+                  {doc.items.map((item, index) => (
+                    <div key={blockKey(index)}>
+                      <BlockCard
+                        item={item}
+                        editing={editing}
+                        draggable={canArrange}
+                        connections={connections}
+                        onEdit={() => openEdit(index)}
+                        onDelete={() => removeBlock(index)}
+                      />
+                    </div>
+                  ))}
+                </Grid>
+                {canArrange && (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[10px] text-ink-faint">
+                    <span>Drag the handle to move</span>
+                    <span>·</span>
+                    <span>Resize from any edge</span>
+                    <span>·</span>
+                    <span>Layout saves instantly and does not create a version</span>
+                  </div>
+                )}
+              </div>
             ) : (
-              <ChartBlock item={item} backend={backend} />
+              <div className="flex flex-col gap-3">
+                {mobileItems.map(({ item, index }) => (
+                  <div key={`${item.title}-${index}`} style={{ height: MOBILE_HEIGHT[item.blockType] }}>
+                    <BlockCard
+                      item={item}
+                      editing={false}
+                      connections={connections}
+                    />
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        ))}
+        </main>
+
+        <CodePanel
+          open={codeOpen}
+          code={code}
+          diagnostics={diagnostics}
+          dirty={dirty}
+          applying={applying}
+          onChange={setCode}
+          onClose={() => setCodeOpen(false)}
+          onApply={() => void applyCode('apply')}
+          onFormat={formatManifest}
+          onNotify={(message) => notify(message, 'info')}
+        />
       </div>
 
-      {/* Dashboard as code */}
-      {dashboard?.items?.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <h3 className="font-medium mb-2">Dashboard as code (annotated SQL)</h3>
-          <pre className="p-3 bg-gray-50 rounded text-xs overflow-auto max-h-80 whitespace-pre-wrap">{asCode}</pre>
+      <BlockEditor
+        open={editorOpen}
+        initial={editingIndex === null ? null : doc.items[editingIndex] ?? null}
+        defaultType={editorType}
+        doc={doc}
+        connections={connections}
+        onClose={() => setEditorOpen(false)}
+        onSave={saveBlock}
+      />
+
+      <CommitDialog
+        open={commitOpen}
+        onClose={() => setCommitOpen(false)}
+        onCommit={(message) => void commit(message)}
+        committing={committing || applying}
+        dashboardName={doc.name || 'dashboard'}
+        baseCode={appliedCode}
+        code={code}
+        dirty={dirty}
+        latestVersion={latestVersion}
+      />
+
+      <HistoryDialog
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        versions={(versionsQuery.data ?? []) as DashboardVersionSummary[]}
+        loading={versionsQuery.isLoading}
+        restoring={restoring}
+        onRestore={(version) => void restore(version)}
+        onLoadCode={loadVersionCode}
+        onNotify={(message) => notify(message, 'info')}
+      />
+
+      <Toast toast={toast} onDismiss={dismissToast} />
+    </div>
+  );
+}
+
+function EmptyDashboard({
+  canEdit,
+  onAdd,
+  onCode,
+}: {
+  canEdit: boolean;
+  onAdd: () => void;
+  onCode: () => void;
+}) {
+  return (
+    <div className="flex min-h-[55vh] items-center justify-center">
+      <div className="max-w-md rounded-xl border border-dashed border-line-strong bg-surface/60 px-8 py-10 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f1eee7] text-ink-soft">
+          <LayoutGrid size={20} strokeWidth={1.6} />
         </div>
-      )}
+        <h2 className="mt-4 text-[16px] font-semibold tracking-[-0.015em] text-ink">
+          A blank canvas
+        </h2>
+        <p className="mx-auto mt-1.5 max-w-xs text-[12px] leading-relaxed text-ink-muted">
+          Add a chart, metric, table, or markdown note. Everything you build stays in a draft until
+          you commit it.
+        </p>
+        {canEdit ? (
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+            <Button variant="primary" onClick={onAdd}>
+              <Plus size={13} /> Add first block
+            </Button>
+            <Button variant="secondary" onClick={onCode}>
+              <Code2 size={13} /> Write code
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-[#f1eee7] px-3 py-1.5 text-[10.5px] font-medium text-ink-muted">
+            <Check size={12} /> Read-only on this device
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-paper">
+      <div className="flex h-[61px] shrink-0 items-center gap-3 border-b border-line bg-surface px-4 md:px-5">
+        <div className="skeleton h-7 w-7 rounded-md" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="skeleton h-3.5 w-48" />
+          <div className="skeleton h-2 w-64 opacity-70" />
+        </div>
+        <div className="hidden gap-1.5 md:flex">
+          <div className="skeleton h-8 w-24 rounded-md" />
+          <div className="skeleton h-8 w-20 rounded-md" />
+          <div className="skeleton h-8 w-20 rounded-md" />
+        </div>
+      </div>
+      <div className="grid flex-1 grid-cols-12 gap-3 px-5 py-5">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className={`skeleton rounded-xl ${index === 0 || index === 3 ? 'col-span-6' : 'col-span-3'}`}
+            style={{ height: index === 0 || index === 3 ? 260 : 180 }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

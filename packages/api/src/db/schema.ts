@@ -62,6 +62,19 @@ export const dashboardItems = sqliteTable('dashboard_items', {
   createdAt: text('created_at').notNull(),
 });
 
+export const dashboardVersions = sqliteTable('dashboard_versions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  dashboardId: integer('dashboard_id').notNull(),
+  version: integer('version').notNull(),
+  parentVersion: integer('parent_version'),
+  message: text('message'),
+  authorId: integer('author_id'),
+  kind: text('kind').notNull().default('manual'),
+  snapshotJson: text('snapshot_json').notNull(),
+  codeText: text('code_text').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
 export const auditLog = sqliteTable('audit_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id'),

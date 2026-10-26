@@ -1,4 +1,34 @@
+import type {
+  ApplyDashboardState,
+  ConnectionDto,
+  DashboardDto,
+  DashboardItemDto,
+  DashboardVersionDetailDto,
+  DashboardVersionDto,
+  DashboardBlockType,
+  Layout,
+  MetricFormat,
+} from '@sqlboard/shared';
+
 const BASE = '';
+
+export type DashboardDetailDto = DashboardDto & {
+  items: DashboardItemDto[];
+  latestVersion: number;
+};
+export type DashboardWithVersion = DashboardDetailDto & { version: DashboardVersionDto };
+export type DashboardVersionSummary = DashboardVersionDto & { codeText: string };
+
+export interface DashboardItemInput {
+  title: string;
+  sql: string;
+  connectionId: number;
+  blockType: DashboardBlockType;
+  config?: Record<string, unknown> | null;
+  layout: Layout;
+}
+
+export type { DashboardBlockType, Layout, MetricFormat };
 
 export function getToken(): string | null {
   return localStorage.getItem('sqlboard_token');
@@ -34,7 +64,7 @@ export const api = {
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
 
   connections: {
-    list: () => request<any[]>('/api/connections'),
+    list: () => request<ConnectionDto[]>('/api/connections'),
     get: (id: number) => request<any>(`/api/connections/${id}`),
     create: (body: any) => request<any>('/api/connections', { method: 'POST', body: JSON.stringify(body) }),
     test: (id: number) => request<any>(`/api/connections/${id}/test`, { method: 'POST' }),
@@ -73,15 +103,52 @@ export const api = {
   },
 
   dashboards: {
-    list: () => request<any[]>('/api/dashboards'),
-    get: (id: number) => request<any>(`/api/dashboards/${id}`),
+    list: () => request<DashboardDto[]>('/api/dashboards'),
+    get: (id: number) => request<DashboardDetailDto>(`/api/dashboards/${id}`),
     create: (body: { name: string; description?: string }) =>
-      request<any>('/api/dashboards', { method: 'POST', body: JSON.stringify(body) }),
+      request<DashboardDto>('/api/dashboards', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: { name?: string; description?: string | null }) =>
+      request<DashboardDetailDto>(`/api/dashboards/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
     delete: (id: number) => request<void>(`/api/dashboards/${id}`, { method: 'DELETE' }),
-    addItem: (dashboardId: number, body: any) =>
-      request<any>(`/api/dashboards/${dashboardId}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    addItem: (dashboardId: number, body: DashboardItemInput) =>
+      request<DashboardItemDto>(`/api/dashboards/${dashboardId}/items`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    updateItem: (dashboardId: number, itemId: number, body: Partial<DashboardItemInput>) =>
+      request<DashboardItemDto>(`/api/dashboards/${dashboardId}/items/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
     removeItem: (dashboardId: number, itemId: number) =>
       request<void>(`/api/dashboards/${dashboardId}/items/${itemId}`, { method: 'DELETE' }),
+    saveLayout: (dashboardId: number, items: Array<{ id: number; layout: Layout }>) =>
+      request<DashboardDetailDto>(`/api/dashboards/${dashboardId}/layout`, {
+        method: 'PUT',
+        body: JSON.stringify({ items }),
+      }),
+    applyState: (dashboardId: number, body: ApplyDashboardState) =>
+      request<DashboardWithVersion>(`/api/dashboards/${dashboardId}/state`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    listVersions: (dashboardId: number) =>
+      request<DashboardVersionSummary[]>(`/api/dashboards/${dashboardId}/versions`),
+    getVersion: (dashboardId: number, version: number) =>
+      request<DashboardVersionDetailDto>(`/api/dashboards/${dashboardId}/versions/${version}`),
+    commitVersion: (dashboardId: number, message: string) =>
+      request<DashboardVersionDto>(`/api/dashboards/${dashboardId}/versions`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    restoreVersion: (dashboardId: number, version: number) =>
+      request<DashboardWithVersion>(
+        `/api/dashboards/${dashboardId}/versions/${version}/restore`,
+        { method: 'POST' },
+      ),
   },
 
   compile: (body: { sql: string; connectionId?: number; data?: any[]; theme?: string; backend?: string; backends?: string[] }) =>

@@ -145,19 +145,26 @@ export const CreateSavedQuerySchema = z.object({
 });
 export type CreateSavedQuery = z.infer<typeof CreateSavedQuerySchema>;
 
-export const DashboardBlockTypeSchema = z.enum(['chart', 'metric']);
+export const DashboardBlockTypeSchema = z.enum(['chart', 'metric', 'table', 'text']);
+export type DashboardBlockType = z.infer<typeof DashboardBlockTypeSchema>;
 
 export const LayoutSchema = z.object({
   x: z.number().int().min(0),
   y: z.number().int().min(0),
   w: z.number().int().min(1).max(12),
-  h: z.number().int().min(1).max(12),
+  h: z.number().int().min(1).max(60),
 });
 export type Layout = z.infer<typeof LayoutSchema>;
 
+export const MetricFormatSchema = z.enum(['number', 'currency', 'percent', 'compact']);
+export type MetricFormat = z.infer<typeof MetricFormatSchema>;
+
 export const MetricBlockConfigSchema = z.object({
+  metricColumn: z.string().optional(),
+  priorColumn: z.string().optional(),
+  sparklineColumn: z.string().optional(),
   higherIsBetter: z.boolean().default(true),
-  format: z.enum(['number', 'currency', 'percent', 'compact']).default('number'),
+  format: MetricFormatSchema.default('number'),
   target: z
     .object({
       value: z.number(),
@@ -170,21 +177,72 @@ export const MetricBlockConfigSchema = z.object({
 });
 export type MetricBlockConfig = z.infer<typeof MetricBlockConfigSchema>;
 
+export const TableBlockConfigSchema = z.object({
+  columns: z.array(z.string()).optional(),
+  pageSize: z.number().int().min(5).max(500).default(25),
+  density: z.enum(['compact', 'comfortable']).default('compact'),
+  maxRows: z.number().int().min(10).max(5000).default(1000),
+  format: z.record(MetricFormatSchema).optional(),
+  rowNumbers: z.boolean().optional(),
+});
+export type TableBlockConfig = z.infer<typeof TableBlockConfigSchema>;
+
+export const TextBlockConfigSchema = z.object({
+  markdown: z.string().default(''),
+});
+export type TextBlockConfig = z.infer<typeof TextBlockConfigSchema>;
+
 export const CreateDashboardSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
 });
 export type CreateDashboard = z.infer<typeof CreateDashboardSchema>;
 
+export const UpdateDashboardSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+});
+export type UpdateDashboard = z.infer<typeof UpdateDashboardSchema>;
+
 export const CreateDashboardItemSchema = z.object({
   title: z.string().min(1),
-  sql: z.string().min(1),
+  // Text blocks carry markdown in config and intentionally have no SQL.
+  sql: z.string(),
   connectionId: z.number().int(),
   blockType: DashboardBlockTypeSchema,
   config: z.record(z.unknown()).optional(),
   layout: LayoutSchema,
 });
 export type CreateDashboardItem = z.infer<typeof CreateDashboardItemSchema>;
+
+export const UpdateDashboardItemSchema = z.object({
+  title: z.string().min(1).optional(),
+  sql: z.string().min(1).optional(),
+  connectionId: z.number().int().optional(),
+  blockType: DashboardBlockTypeSchema.optional(),
+  config: z.record(z.unknown()).nullable().optional(),
+  layout: LayoutSchema.optional(),
+});
+export type UpdateDashboardItem = z.infer<typeof UpdateDashboardItemSchema>;
+
+export const DashboardLayoutUpdateSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.number().int(),
+      layout: LayoutSchema,
+    }),
+  ),
+});
+export type DashboardLayoutUpdate = z.infer<typeof DashboardLayoutUpdateSchema>;
+
+export const ApplyDashboardStateSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  items: z.array(CreateDashboardItemSchema),
+  message: z.string().optional(),
+  kind: z.enum(['manual', 'apply', 'restore']).default('apply'),
+});
+export type ApplyDashboardState = z.infer<typeof ApplyDashboardStateSchema>;
 
 export const DashboardItemDtoSchema = z.object({
   id: z.number().int(),
@@ -207,6 +265,29 @@ export const DashboardDtoSchema = z.object({
   updatedAt: z.string(),
 });
 export type DashboardDto = z.infer<typeof DashboardDtoSchema>;
+
+export const DashboardVersionDtoSchema = z.object({
+  id: z.number().int(),
+  dashboardId: z.number().int(),
+  version: z.number().int(),
+  parentVersion: z.number().int().nullable(),
+  message: z.string().nullable(),
+  authorId: z.number().int().nullable(),
+  kind: z.enum(['manual', 'apply', 'restore']),
+  createdAt: z.string(),
+});
+export type DashboardVersionDto = z.infer<typeof DashboardVersionDtoSchema>;
+
+export const DashboardVersionDetailDtoSchema = DashboardVersionDtoSchema.extend({
+  snapshot: z.unknown(),
+  codeText: z.string(),
+});
+export type DashboardVersionDetailDto = z.infer<typeof DashboardVersionDetailDtoSchema>;
+
+export const CommitDashboardSchema = z.object({
+  message: z.string().min(1).max(200),
+});
+export type CommitDashboard = z.infer<typeof CommitDashboardSchema>;
 
 export const UploadDtoSchema = z.object({
   id: z.number().int(),

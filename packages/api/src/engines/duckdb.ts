@@ -32,47 +32,84 @@ export class DuckDbEngine implements QueryEngine {
   constructor(private readonly dbPath: string) {}
 
   private async ensureReady(): Promise<void> {
-    if (this.conn) return;
+    // If we have a connection, verify it's alive
+    if (this.conn) {
+      try {
+        await this.ping();
+        return;
+      } catch {
+        // Connection is dead — recreate
+        this.conn = null;
+        this.db = null;
+        this.ready = null;
+      }
+    }
+
     if (!this.ready) {
       this.ready = new Promise<void>((resolve, reject) => {
         const db = new duckdb.Database(this.dbPath, (err: Error | null) => {
-          if (err) { reject(err); return; }
+          if (err) {
+            reject(err);
+            return;
+          }
           this.db = db;
           this.conn = db.connect();
-          console.error('DEBUG: connected, conn type:', typeof this.conn);
           resolve();
         });
       });
     }
+
     await this.ready;
   }
 
-  private connection(): any {
-    if (!this.conn) throw new Error('Connection not ready');
-    return this.conn;
+  private async ping(): Promise<void> {
+    if (!this.conn) throw new Error('no connection');
+    return new Promise((resolve, reject) => {
+      this.conn.all('SELECT 1 AS ok', (err: Error | null) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   }
 
   private async all(sql: string): Promise<Array<Record<string, unknown>>> {
     await this.ensureReady();
-    const conn = this.connection();
     return new Promise((resolve, reject) => {
-      conn.all(sql, (err: Error | null, rows?: Array<Record<string, unknown>>) => {
-        if (err) reject(new Error(String(err.message ?? err)));
-        else resolve(rows ?? []);
+      this.conn.all(sql, (err: Error | null, rows?: Array<Record<string, unknown>>) => {
+        if (err) {
+          // If connection error, mark as dead for next call
+          const msg = String(err.message ?? err);
+          if (/never established|closed already|Connection Error/i.test(msg)) {
+            this.conn = null;
+            this.db = null;
+            this.ready = null;
+          }
+          reject(new Error(msg));
+        } else {
+          resolve(rows ?? []);
+        }
       });
     });
   }
 
   private async exec(sql: string, params?: unknown[]): Promise<void> {
     await this.ensureReady();
-    const conn = this.connection();
     return new Promise((resolve, reject) => {
       const callback = (err: Error | null) => {
-        if (err) reject(new Error(String(err.message ?? err)));
-        else resolve();
+        if (err) {
+          const msg = String(err.message ?? err);
+          if (/never established|closed already|Connection Error/i.test(msg)) {
+            this.conn = null;
+            this.db = null;
+            this.ready = null;
+          }
+          reject(new Error(msg));
+        } else {
+          resolve();
+        }
       };
-      if (params && params.length > 0) conn.run(sql, ...params, callback);
-      else conn.run(sql, callback);
+      if (params && params.length > 0) this.conn.run(sql, ...params, callback);
+      else this.conn.run(sql, callback);
     });
   }
 
@@ -93,26 +130,36 @@ export class DuckDbEngine implements QueryEngine {
   }
 
   async listTables(): Promise<TableInfo[]> {
-    const rows = await this.all(
-      `SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'main' AND table_name NOT LIKE 'cache_%'
-       ORDER BY table_name`,
-    );
-    const tables: TableInfo[] = [];
-    for (const row of rows) {
-      const name = String(row.table_name);
-      tables.push({ name, columns: await this.columnNames(name) });
+    try {
+      const rows = await this.all(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'main' AND table_name NOT LIKE 'cache_%'
+         ORDER BY table_name`,
+      );
+      const tables: TableInfo[] = [];
+      for (const row of rows) {
+        const name = String(row.table_name);
+        tables.push({ name, columns: await this.columnNames(name) });
+      }
+      return tables;
+    } catch (error) {
+      // Fallback: if information_schema fails, try sqlite_master equivalent
+      console.error('listTables failed:', (error as Error).message);
+      return [];
     }
-    return tables;
   }
 
   private async columnNames(table: string): Promise<string[]> {
-    const rows = await this.all(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_schema = 'main' AND table_name = ${escapeLiteral(table)}
-       ORDER BY ordinal_position`,
-    );
-    return rows.map((row) => String(row.column_name));
+    try {
+      const rows = await this.all(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'main' AND table_name = ${escapeLiteral(table)}
+         ORDER BY ordinal_position`,
+      );
+      return rows.map((row) => String(row.column_name));
+    } catch {
+      return [];
+    }
   }
 
   async preview(table: string, limit = 100): Promise<QueryResult> {

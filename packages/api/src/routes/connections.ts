@@ -2,10 +2,29 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { badRequest, notFound } from '../errors.js';
-import { connections, savedQueries, dashboards, dashboardItems, uploads } from '../db/schema.js';
+import {
+  connections,
+  savedQueries,
+  dashboards,
+  dashboardItems,
+  dashboardVersions,
+  sessions,
+  uploads,
+} from '../db/schema.js';
 import type { DrizzleDb } from '../db/client.js';
 import type { EngineFactory } from '../engines/factory.js';
-import { CreateConnectionRequestSchema, RunQueryRequestSchema } from '@sqlboard/shared';
+import {
+  ApplyDashboardStateSchema,
+  CommitDashboardSchema,
+  CreateConnectionRequestSchema,
+  CreateDashboardItemSchema,
+  DashboardLayoutUpdateSchema,
+  RunQueryRequestSchema,
+  serializeDashboardManifest,
+  UpdateDashboardItemSchema,
+  UpdateDashboardSchema,
+  type ManifestDashboard,
+} from '@sqlboard/shared';
 import { QueryCache } from '../cache/query-cache.js';
 
 interface RouteDeps {
@@ -187,6 +206,186 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
   });
 }
 
+type DashboardSnapshot = ManifestDashboard;
+
+interface DashboardVersionKind {
+  kind: 'manual' | 'apply' | 'restore';
+}
+
+function parseConfig(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function readDashboard(deps: RouteDeps, id: number): {
+  row: typeof dashboards.$inferSelect;
+  snapshot: DashboardSnapshot;
+} {
+  const row = deps.db.select().from(dashboards).where(eq(dashboards.id, id)).all()[0];
+  if (!row) throw notFound(`Dashboard ${id} not found`);
+  const items = deps.db
+    .select()
+    .from(dashboardItems)
+    .where(eq(dashboardItems.dashboardId, id))
+    .all();
+
+  return {
+    row,
+    snapshot: {
+      name: row.name,
+      description: row.description,
+      items: items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        sql: item.sql,
+        connectionId: item.connectionId,
+        blockType: item.blockType as DashboardSnapshot['items'][number]['blockType'],
+        config: parseConfig(item.configJson),
+        layout: JSON.parse(item.layoutJson),
+      })),
+    },
+  };
+}
+
+function dashboardResponse(deps: RouteDeps, id: number) {
+  const { row, snapshot } = readDashboard(deps, id);
+  const latestVersion =
+    deps.db
+      .select({ version: dashboardVersions.version })
+      .from(dashboardVersions)
+      .where(eq(dashboardVersions.dashboardId, id))
+      .all()
+      .reduce((max, entry) => Math.max(max, entry.version), 0);
+
+  return {
+    id: row.id,
+    name: snapshot.name,
+    description: snapshot.description,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    latestVersion,
+    items: snapshot.items.map((item) => ({
+      id: item.id,
+      dashboardId: row.id,
+      title: item.title,
+      sql: item.sql,
+      connectionId: item.connectionId,
+      blockType: item.blockType,
+      config: item.config,
+      layout: item.layout,
+      createdAt: row.createdAt,
+    })),
+  };
+}
+
+function serializeSnapshot(deps: RouteDeps, snapshot: DashboardSnapshot): string {
+  const connectionList = deps.db
+    .select({ id: connections.id, name: connections.name })
+    .from(connections)
+    .all();
+  return serializeDashboardManifest(snapshot, connectionList);
+}
+
+function authorIdFrom(request: { headers: Record<string, unknown> }, deps: RouteDeps): number | null {
+  const header = request.headers.authorization;
+  if (typeof header !== 'string') return null;
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  const session = deps.db.select().from(sessions).where(eq(sessions.token, match[1])).all()[0];
+  if (!session) return null;
+  if (Date.parse(session.expiresAt) < Date.now()) return null;
+  return session.userId;
+}
+
+function insertVersion(
+  deps: RouteDeps,
+  dashboardId: number,
+  snapshot: DashboardSnapshot,
+  message: string | null,
+  kind: DashboardVersionKind['kind'],
+  authorId: number | null,
+) {
+  const versions = deps.db
+    .select({ version: dashboardVersions.version })
+    .from(dashboardVersions)
+    .where(eq(dashboardVersions.dashboardId, dashboardId))
+    .all();
+  const latest = versions.reduce((max, row) => Math.max(max, row.version), 0);
+  const version = latest + 1;
+  const now = new Date().toISOString();
+
+  const inserted = deps.db
+    .insert(dashboardVersions)
+    .values({
+      dashboardId,
+      version,
+      parentVersion: latest > 0 ? latest : null,
+      message,
+      authorId,
+      kind,
+      snapshotJson: JSON.stringify(snapshot),
+      codeText: serializeSnapshot(deps, snapshot),
+      createdAt: now,
+    })
+    .returning()
+    .get();
+
+  return {
+    id: inserted.id,
+    dashboardId: inserted.dashboardId,
+    version: inserted.version,
+    parentVersion: inserted.parentVersion,
+    message: inserted.message,
+    authorId: inserted.authorId,
+    kind: inserted.kind as DashboardVersionKind['kind'],
+    createdAt: inserted.createdAt,
+  };
+}
+
+function touchDashboard(deps: RouteDeps, id: number): void {
+  deps.db
+    .update(dashboards)
+    .set({ updatedAt: new Date().toISOString() })
+    .where(eq(dashboards.id, id))
+    .run();
+}
+
+function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot): void {
+  const now = new Date().toISOString();
+  deps.db
+    .update(dashboards)
+    .set({
+      name: snapshot.name,
+      description: snapshot.description,
+      updatedAt: now,
+    })
+    .where(eq(dashboards.id, id))
+    .run();
+
+  deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, id)).run();
+
+  for (const item of snapshot.items) {
+    deps.db
+      .insert(dashboardItems)
+      .values({
+        dashboardId: id,
+        title: item.title,
+        sql: item.sql,
+        connectionId: item.connectionId,
+        blockType: item.blockType,
+        configJson: item.config ? JSON.stringify(item.config) : null,
+        layoutJson: JSON.stringify(item.layout),
+        createdAt: now,
+      })
+      .run();
+  }
+}
+
 export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/dashboards', async () => {
     const rows = deps.db.select().from(dashboards).all();
@@ -200,15 +399,32 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   });
 
   app.post('/api/dashboards', async (request, reply) => {
-    const parsed = z.object({ name: z.string().min(1), description: z.string().optional() }).safeParse(request.body);
+    const parsed = z
+      .object({ name: z.string().min(1), description: z.string().optional() })
+      .safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard', parsed.error.flatten());
 
     const now = new Date().toISOString();
     const inserted = deps.db
       .insert(dashboards)
-      .values({ name: parsed.data.name, description: parsed.data.description ?? null, createdAt: now, updatedAt: now })
+      .values({
+        name: parsed.data.name,
+        description: parsed.data.description ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
       .returning()
       .get();
+
+    insertVersion(
+      deps,
+      inserted.id,
+      { name: inserted.name, description: inserted.description, items: [] },
+      'Dashboard created',
+      'manual',
+      authorIdFrom(request, deps),
+    );
+
     reply.code(201);
     return {
       id: inserted.id,
@@ -219,60 +435,41 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     };
   });
 
-  app.get('/api/dashboards/:id', async (request) => {
+  app.patch('/api/dashboards/:id', async (request) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    const rows = deps.db.select().from(dashboards).where(eq(dashboards.id, numericId)).all();
-    if (rows.length === 0) throw notFound(`Dashboard ${id} not found`);
-    const items = deps.db
-      .select()
-      .from(dashboardItems)
-      .where(eq(dashboardItems.dashboardId, numericId))
-      .all();
-    return {
-      id: rows[0].id,
-      name: rows[0].name,
-      description: rows[0].description,
-      createdAt: rows[0].createdAt,
-      updatedAt: rows[0].updatedAt,
-      items: items.map((item) => ({
-        id: item.id,
-        dashboardId: item.dashboardId,
-        title: item.title,
-        sql: item.sql,
-        connectionId: item.connectionId,
-        blockType: item.blockType,
-        config: item.configJson ? JSON.parse(item.configJson) : null,
-        layout: JSON.parse(item.layoutJson),
-        createdAt: item.createdAt,
-      })),
+    const parsed = UpdateDashboardSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid dashboard update', parsed.error.flatten());
+    readDashboard(deps, numericId);
+
+    const patch: Partial<typeof dashboards.$inferInsert> = {
+      updatedAt: new Date().toISOString(),
     };
+    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+    if (parsed.data.description !== undefined) patch.description = parsed.data.description;
+
+    deps.db.update(dashboards).set(patch).where(eq(dashboards.id, numericId)).run();
+    return dashboardResponse(deps, numericId);
+  });
+
+  app.get('/api/dashboards/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    return dashboardResponse(deps, Number(id));
   });
 
   app.post('/api/dashboards/:id/items', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const parsed = z
-      .object({
-        title: z.string().min(1),
-        sql: z.string().min(1),
-        connectionId: z.number().int(),
-        blockType: z.enum(['chart', 'metric']).default('chart'),
-        config: z.record(z.unknown()).optional(),
-        layout: z.object({
-          x: z.number().int().min(0),
-          y: z.number().int().min(0),
-          w: z.number().int().min(1).max(12),
-          h: z.number().int().min(1).max(12),
-        }),
-      })
-      .safeParse(request.body);
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+
+    const parsed = CreateDashboardItemSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard item', parsed.error.flatten());
 
     const now = new Date().toISOString();
     const inserted = deps.db
       .insert(dashboardItems)
       .values({
-        dashboardId: Number(id),
+        dashboardId: numericId,
         title: parsed.data.title,
         sql: parsed.data.sql,
         connectionId: parsed.data.connectionId,
@@ -283,6 +480,8 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       })
       .returning()
       .get();
+    touchDashboard(deps, numericId);
+
     reply.code(201);
     return {
       id: inserted.id,
@@ -291,32 +490,242 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       sql: inserted.sql,
       connectionId: inserted.connectionId,
       blockType: inserted.blockType,
-      config: inserted.configJson ? JSON.parse(inserted.configJson) : null,
+      config: parseConfig(inserted.configJson),
       layout: JSON.parse(inserted.layoutJson),
       createdAt: inserted.createdAt,
     };
   });
 
+  app.patch('/api/dashboards/:id/items/:itemId', async (request) => {
+    const { id, itemId } = request.params as { id: string; itemId: string };
+    const numericId = Number(id);
+    const numericItemId = Number(itemId);
+    const existing = deps.db
+      .select()
+      .from(dashboardItems)
+      .where(eq(dashboardItems.id, numericItemId))
+      .all()[0];
+    if (!existing || existing.dashboardId !== numericId) {
+      throw notFound(`Dashboard item ${itemId} not found`);
+    }
+
+    const parsed = UpdateDashboardItemSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid dashboard item update', parsed.error.flatten());
+
+    const patch: Partial<typeof dashboardItems.$inferInsert> = {};
+    if (parsed.data.title !== undefined) patch.title = parsed.data.title;
+    if (parsed.data.sql !== undefined) patch.sql = parsed.data.sql;
+    if (parsed.data.connectionId !== undefined) patch.connectionId = parsed.data.connectionId;
+    if (parsed.data.blockType !== undefined) patch.blockType = parsed.data.blockType;
+    if (parsed.data.config !== undefined) {
+      patch.configJson = parsed.data.config ? JSON.stringify(parsed.data.config) : null;
+    }
+    if (parsed.data.layout !== undefined) patch.layoutJson = JSON.stringify(parsed.data.layout);
+
+    if (Object.keys(patch).length > 0) {
+      deps.db
+        .update(dashboardItems)
+        .set(patch)
+        .where(eq(dashboardItems.id, numericItemId))
+        .run();
+      touchDashboard(deps, numericId);
+    }
+
+    const updated = deps.db
+      .select()
+      .from(dashboardItems)
+      .where(eq(dashboardItems.id, numericItemId))
+      .all()[0];
+    return {
+      id: updated.id,
+      dashboardId: updated.dashboardId,
+      title: updated.title,
+      sql: updated.sql,
+      connectionId: updated.connectionId,
+      blockType: updated.blockType,
+      config: parseConfig(updated.configJson),
+      layout: JSON.parse(updated.layoutJson),
+      createdAt: updated.createdAt,
+    };
+  });
+
+  app.put('/api/dashboards/:id/layout', async (request) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+    const parsed = DashboardLayoutUpdateSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid layout update', parsed.error.flatten());
+
+    for (const entry of parsed.data.items) {
+      const existing = deps.db
+        .select({ id: dashboardItems.id, dashboardId: dashboardItems.dashboardId })
+        .from(dashboardItems)
+        .where(eq(dashboardItems.id, entry.id))
+        .all()[0];
+      if (!existing || existing.dashboardId !== numericId) continue;
+      deps.db
+        .update(dashboardItems)
+        .set({ layoutJson: JSON.stringify(entry.layout) })
+        .where(eq(dashboardItems.id, entry.id))
+        .run();
+    }
+    touchDashboard(deps, numericId);
+    return dashboardResponse(deps, numericId);
+  });
+
+  app.put('/api/dashboards/:id/state', async (request) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+    const parsed = ApplyDashboardStateSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid dashboard state', parsed.error.flatten());
+
+    const current = readDashboard(deps, numericId).snapshot;
+    const snapshot: DashboardSnapshot = {
+      name: parsed.data.name ?? current.name,
+      description:
+        parsed.data.description === undefined ? current.description : parsed.data.description,
+      items: parsed.data.items.map((item) => ({
+        title: item.title,
+        sql: item.sql,
+        connectionId: item.connectionId,
+        blockType: item.blockType,
+        config: item.config ?? null,
+        layout: item.layout,
+      })),
+    };
+
+    applySnapshot(deps, numericId, snapshot);
+    const version = insertVersion(
+      deps,
+      numericId,
+      snapshot,
+      parsed.data.message ?? 'Apply dashboard code',
+      parsed.data.kind,
+      authorIdFrom(request, deps),
+    );
+
+    return { ...dashboardResponse(deps, numericId), version };
+  });
+
   app.delete('/api/dashboards/:id/items/:itemId', async (request, reply) => {
-    const { itemId } = request.params as { id: string; itemId: string };
+    const { id, itemId } = request.params as { id: string; itemId: string };
+    const numericId = Number(id);
     const rows = deps.db
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, Number(itemId)))
       .all();
-    if (rows.length === 0) throw notFound(`Dashboard item ${itemId} not found`);
+    if (rows.length === 0 || rows[0].dashboardId !== numericId) {
+      throw notFound(`Dashboard item ${itemId} not found`);
+    }
     deps.db.delete(dashboardItems).where(eq(dashboardItems.id, Number(itemId))).run();
+    touchDashboard(deps, numericId);
     reply.code(204);
   });
 
   app.delete('/api/dashboards/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    const rows = deps.db.select().from(dashboards).where(eq(dashboards.id, numericId)).all();
-    if (rows.length === 0) throw notFound(`Dashboard ${id} not found`);
+    readDashboard(deps, numericId);
     deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, numericId)).run();
+    deps.db.delete(dashboardVersions).where(eq(dashboardVersions.dashboardId, numericId)).run();
     deps.db.delete(dashboards).where(eq(dashboards.id, numericId)).run();
     reply.code(204);
+  });
+
+  app.get('/api/dashboards/:id/versions', async (request) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+    const rows = deps.db
+      .select()
+      .from(dashboardVersions)
+      .where(eq(dashboardVersions.dashboardId, numericId))
+      .all();
+    return rows
+      .sort((left, right) => right.version - left.version)
+      .map((row) => ({
+        id: row.id,
+        dashboardId: row.dashboardId,
+        version: row.version,
+        parentVersion: row.parentVersion,
+        message: row.message,
+        authorId: row.authorId,
+        kind: row.kind as DashboardVersionKind['kind'],
+        createdAt: row.createdAt,
+        codeText: row.codeText,
+      }));
+  });
+
+  app.get('/api/dashboards/:id/versions/:version', async (request) => {
+    const { id, version } = request.params as { id: string; version: string };
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+    const row = deps.db
+      .select()
+      .from(dashboardVersions)
+      .where(eq(dashboardVersions.dashboardId, numericId))
+      .all()
+      .find((entry) => entry.version === Number(version));
+    if (!row) throw notFound(`Dashboard version ${version} not found`);
+    return {
+      id: row.id,
+      dashboardId: row.dashboardId,
+      version: row.version,
+      parentVersion: row.parentVersion,
+      message: row.message,
+      authorId: row.authorId,
+      kind: row.kind as DashboardVersionKind['kind'],
+      createdAt: row.createdAt,
+      codeText: row.codeText,
+      snapshot: JSON.parse(row.snapshotJson),
+    };
+  });
+
+  app.post('/api/dashboards/:id/versions', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+    const parsed = CommitDashboardSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid commit', parsed.error.flatten());
+
+    const snapshot = readDashboard(deps, numericId).snapshot;
+    const version = insertVersion(
+      deps,
+      numericId,
+      snapshot,
+      parsed.data.message,
+      'manual',
+      authorIdFrom(request, deps),
+    );
+    reply.code(201);
+    return version;
+  });
+
+  app.post('/api/dashboards/:id/versions/:version/restore', async (request) => {
+    const { id, version } = request.params as { id: string; version: string };
+    const numericId = Number(id);
+    readDashboard(deps, numericId);
+    const row = deps.db
+      .select()
+      .from(dashboardVersions)
+      .where(eq(dashboardVersions.dashboardId, numericId))
+      .all()
+      .find((entry) => entry.version === Number(version));
+    if (!row) throw notFound(`Dashboard version ${version} not found`);
+
+    const snapshot = JSON.parse(row.snapshotJson) as DashboardSnapshot;
+    applySnapshot(deps, numericId, snapshot);
+    const restored = insertVersion(
+      deps,
+      numericId,
+      snapshot,
+      `Restored v${row.version}`,
+      'restore',
+      authorIdFrom(request, deps),
+    );
+    return { ...dashboardResponse(deps, numericId), version: restored };
   });
 }
 

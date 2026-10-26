@@ -62,6 +62,19 @@ const BOOTSTRAP_SQL = [
     layout_json TEXT NOT NULL,
     created_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS dashboard_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dashboard_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    parent_version INTEGER,
+    message TEXT,
+    author_id INTEGER,
+    kind TEXT NOT NULL DEFAULT 'manual',
+    snapshot_json TEXT NOT NULL,
+    code_text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS dashboard_versions_unique ON dashboard_versions (dashboard_id, version)`,
   `CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
