@@ -572,9 +572,26 @@ export default function DashboardDetail() {
       .split(',')
       .map((color) => color.trim())
       .filter(Boolean);
+    const theme = themeForm.theme.trim() || undefined;
+    const nextItems = doc.items.map((item) => {
+      if (item.blockType !== 'chart') return item;
+      const stripped = item.sql
+        .split('\n')
+        .filter((line) => !/^\s*--\s*@(theme|colors)\s*:/i.test(line))
+        .join('\n')
+        .trim();
+      const additions = [
+        theme ? `-- @theme: ${theme}` : null,
+        colors.length ? `-- @colors: ${colors.join(', ')}` : null,
+      ].filter(Boolean) as string[];
+      return {
+        ...item,
+        sql: [...additions, stripped].filter(Boolean).join('\n'),
+      };
+    });
     setCode(
       serializeDoc(
-        { ...doc, theme: themeForm.theme.trim() || undefined, colors: colors.length ? colors : undefined },
+        { ...doc, theme, colors: colors.length ? colors : undefined, items: nextItems },
         manifestConnections,
         manifestSavedQueries,
       ),
