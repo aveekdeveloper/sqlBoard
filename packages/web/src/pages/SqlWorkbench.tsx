@@ -30,12 +30,28 @@ export default function SqlWorkbench() {
   });
 
   useEffect(() => {
-    if (connections && connections.length > 0 && !connectionId) {
+    if (connections && connections.length > 0 && !connectionId && !searchParams.get('saved')) {
       const connParam = searchParams.get('conn');
       const defaultConn = connParam ? Number(connParam) : connections[0].id;
       setConnectionId(defaultConn);
     }
   }, [connections, connectionId, searchParams]);
+
+  useEffect(() => {
+    const savedId = searchParams.get('saved');
+    if (!savedId) return;
+    api.savedQueries
+      .list()
+      .then((queries) => {
+        const q = (queries || []).find((x: any) => String(x.id) === savedId);
+        if (q) {
+          setConnectionId(q.connectionId);
+          setSqlText(q.sql);
+          setStatus(`Loaded saved query "${q.name}".`);
+        }
+      })
+      .catch(() => {});
+  }, [searchParams]);
 
   useEffect(() => {
     if (!connectionId) return;

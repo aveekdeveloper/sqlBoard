@@ -20,8 +20,8 @@ export { getToken, setToken };
 const NAV_ITEMS = [
   { path: '/connections', label: 'Connections', icon: '🔌' },
   { path: '/sql', label: 'SQL', icon: '📝' },
-  { path: '/dashboards', label: 'Dashboards', icon: '📊' },
   { path: '/saved', label: 'Saved', icon: '💾' },
+  { path: '/dashboards', label: 'Dashboards', icon: '📊' },
 ];
 
 function Login() {

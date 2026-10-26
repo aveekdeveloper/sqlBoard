@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 
 export default function SavedQueries() {
   const qc = useQueryClient();
+  const [status, setStatus] = useState('');
   const { data: queries } = useQuery({
     queryKey: ['saved-queries'],
     queryFn: () => api.savedQueries.list(),
@@ -16,36 +17,72 @@ export default function SavedQueries() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.savedQueries.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-queries'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saved-queries'] });
+      setStatus('Saved query deleted.');
+    },
   });
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Saved Queries</h2>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-[20px] font-semibold tracking-[-0.015em] text-ink">Saved Queries</h2>
+        <p className="mt-1 text-[12.5px] text-ink-muted">
+          Reopen saved SQL in the workbench or remove queries you no longer need.
+        </p>
+      </div>
+
+      {status && (
+        <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted">
+          {status}
+        </div>
+      )}
+
       <div className="space-y-2">
         {(queries || []).map((q: any) => {
           const conn = (connections || []).find((c: any) => c.id === q.connectionId);
           return (
-            <div key={q.id} className="bg-white rounded-lg shadow-sm p-4">
-              <div className="flex items-center justify-between gap-2">
+            <div
+              key={q.id}
+              className="rounded-xl border border-line bg-surface p-4 shadow-card"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
-                  <div className="font-medium truncate">{q.name}</div>
-                  <div className="text-xs text-gray-500">{conn?.name || `conn #${q.connectionId}`} · {new Date(q.updatedAt).toLocaleDateString()}</div>
+                  <div className="truncate text-[13px] font-medium text-ink">{q.name}</div>
+                  <div className="mt-0.5 text-[11.5px] text-ink-muted">
+                    {conn?.name || `conn #${q.connectionId}`} ·{' '}
+                    {new Date(q.updatedAt).toLocaleDateString()}
+                  </div>
+                  <pre className="mt-3 max-h-32 overflow-auto rounded-md bg-paper p-3 text-[11px] text-ink-soft whitespace-pre-wrap">
+                    {q.sql}
+                  </pre>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <a href={`/sql?saved=${q.id}`} className="text-sm text-blue-600 hover:underline">Open</a>
-                  <button onClick={() => { if (confirm('Delete?')) deleteMutation.mutate(q.id); }} className="text-sm text-red-600 hover:underline">
+                <div className="flex shrink-0 gap-2">
+                  <a
+                    href={`/sql?saved=${q.id}`}
+                    className="focus-ring rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-[12px] font-medium text-accent hover:bg-accent-soft/70"
+                  >
+                    Open in workbench
+                  </a>
+                  <button
+                    onClick={() => {
+                      if (confirm('Delete this saved query?')) deleteMutation.mutate(q.id);
+                    }}
+                    className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
+                  >
                     Delete
                   </button>
                 </div>
               </div>
-              <pre className="mt-2 p-2 bg-gray-50 rounded text-xs overflow-auto max-h-32 whitespace-pre-wrap">{q.sql}</pre>
             </div>
           );
         })}
       </div>
+
       {(!queries || queries.length === 0) && (
-        <p className="text-gray-500 text-center py-8">No saved queries yet. Save one from the SQL workbench.</p>
+        <div className="rounded-xl border border-dashed border-line bg-surface/60 px-4 py-10 text-center text-[12.5px] text-ink-muted">
+          No saved queries yet. Save one from the SQL workbench.
+        </div>
       )}
     </div>
   );
