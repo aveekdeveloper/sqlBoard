@@ -5,6 +5,7 @@ import Connections from './pages/Connections.js';
 import SqlWorkbench from './pages/SqlWorkbench.js';
 import Dashboards from './pages/Dashboards.js';
 import DashboardDetail from './pages/DashboardDetail.js';
+import SavedQueries from './pages/SavedQueries.js';
 
 function getToken(): string | null {
   return localStorage.getItem('sqlboard_token');
@@ -149,15 +150,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-
-function SavedQueries() {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Saved Queries</h2>
-      <p className="text-gray-500">Saved queries list.</p>
-    </div>
-  );
-}
 
 export default function App() {
   return (
