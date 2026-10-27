@@ -10,12 +10,24 @@ export default function Dashboards() {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState('updatedAt');
+  const [sortDir, setSortDir] = useState('desc');
   const qc = useQueryClient();
   const { canWrite } = useAuth();
 
   const { data: dashboards } = useQuery({
-    queryKey: ['dashboards'],
-    queryFn: () => api.dashboards.list(),
+    queryKey: ['dashboards', tagFilter.join(','), sortBy, sortDir],
+    queryFn: () => api.dashboards.list({
+      tags: tagFilter.length > 0 ? tagFilter.join(',') : undefined,
+      sortBy,
+      sortDir,
+    }),
+  });
+
+  const { data: allTags } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => api.tags.list(),
   });
 
   const createMutation = useMutation({
@@ -28,13 +40,21 @@ export default function Dashboards() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboards'] }),
   });
 
+  const toggleTag = (name: string) => {
+    setTagFilter((prev) =>
+      prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name],
+    );
+    setPage(1);
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = dashboards || [];
     if (!q) return list;
     return list.filter((d: any) =>
       String(d.name || '').toLowerCase().includes(q) ||
-      String(d.description || '').toLowerCase().includes(q),
+      String(d.description || '').toLowerCase().includes(q) ||
+      (d.tags || []).some((t: string) => t.toLowerCase().includes(q)),
     );
   }, [dashboards, search]);
 
@@ -82,16 +102,67 @@ export default function Dashboards() {
         </form>
       )}
 
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <input
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search dashboards..."
-          className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-faint md:max-w-sm"
-        />
-        <div className="text-[11.5px] text-ink-faint">
-          {filtered.length} dashboard{filtered.length === 1 ? '' : 's'}
+      <div className="space-y-3 rounded-xl border border-line bg-surface p-4 shadow-card">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <input
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search dashboards..."
+            className="focus-ring w-full rounded-md border border-line bg-paper px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-faint md:max-w-sm"
+          />
+          <div className="flex items-center gap-2">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
+            >
+              <option value="updatedAt">Recently updated</option>
+              <option value="createdAt">Newest first</option>
+              <option value="name">Name A-Z</option>
+            </select>
+            <button
+              onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+              className="focus-ring rounded-md border border-line bg-surface px-2.5 py-2 text-[12px] text-ink-soft hover:border-line-strong"
+            >
+              {sortDir === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
         </div>
+
+        {allTags && allTags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint mr-1">Tags:</span>
+            <button
+              onClick={() => { setTagFilter([]); setPage(1); }}
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                tagFilter.length === 0
+                  ? 'bg-accent-soft text-accent-ink'
+                  : 'bg-paper text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
+              }`}
+            >
+              All
+            </button>
+            {allTags.map((t: any) => (
+              <button
+                key={t.id}
+                onClick={() => toggleTag(t.name)}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                  tagFilter.includes(t.name)
+                    ? 'bg-accent-soft text-accent-ink'
+                    : 'bg-paper text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
+                }`}
+                style={tagFilter.includes(t.name) && t.color ? { backgroundColor: t.color + '20', color: t.color } : undefined}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-[11.5px] text-ink-faint">
+        {filtered.length} dashboard{filtered.length === 1 ? '' : 's'}
+        {tagFilter.length > 0 && ` · filtered by ${tagFilter.length} tag${tagFilter.length === 1 ? '' : 's'}`}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -102,6 +173,22 @@ export default function Dashboards() {
             </a>
             {d.description && (
               <p className="mt-1 text-[12px] text-ink-muted">{d.description}</p>
+            )}
+            {(d.tags || []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {d.tags.map((tag: string) => {
+                  const tagInfo = (allTags || []).find((t: any) => t.name === tag);
+                  return (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-paper px-2 py-0.5 text-[10px] font-medium text-ink-muted"
+                      style={tagInfo?.color ? { backgroundColor: tagInfo.color + '18', color: tagInfo.color } : undefined}
+                    >
+                      {tag}
+                    </span>
+                  );
+                })}
+              </div>
             )}
             <div className="mt-3 flex items-center justify-between">
               <span className="text-[10.5px] text-ink-faint">

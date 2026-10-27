@@ -178,7 +178,15 @@ export const api = {
   },
 
   savedQueries: {
-    list: () => request<any[]>('/api/saved-queries'),
+    list: (params?: { tags?: string; connectionId?: number; sortBy?: string; sortDir?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.tags) qs.set('tags', params.tags);
+      if (params?.connectionId) qs.set('connectionId', String(params.connectionId));
+      if (params?.sortBy) qs.set('sortBy', params.sortBy);
+      if (params?.sortDir) qs.set('sortDir', params.sortDir);
+      const q = qs.toString();
+      return request<any[]>(`/api/saved-queries${q ? `?${q}` : ''}`);
+    },
     get: (id: number) => request<any>(`/api/saved-queries/${id}`),
     create: (body: { name: string; connectionId: number; sql: string }) =>
       request<any>('/api/saved-queries', { method: 'POST', body: JSON.stringify(body) }),
@@ -191,7 +199,14 @@ export const api = {
   },
 
   dashboards: {
-    list: () => request<DashboardDto[]>('/api/dashboards'),
+    list: (params?: { tags?: string; sortBy?: string; sortDir?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.tags) qs.set('tags', params.tags);
+      if (params?.sortBy) qs.set('sortBy', params.sortBy);
+      if (params?.sortDir) qs.set('sortDir', params.sortDir);
+      const q = qs.toString();
+      return request<any[]>(`/api/dashboards${q ? `?${q}` : ''}`);
+    },
     get: (id: number) => request<DashboardDetailDto>(`/api/dashboards/${id}`),
     create: (body: { name: string; description?: string }) =>
       request<DashboardDto>('/api/dashboards', { method: 'POST', body: JSON.stringify(body) }),
@@ -244,6 +259,15 @@ export const api = {
     create: (body: { name: string; scope?: ApiTokenScope; expiresInDays?: number | null }) =>
       request<CreatedApiToken>('/api/tokens', { method: 'POST', body: JSON.stringify(body) }),
     revoke: (id: number) => request<void>(`/api/tokens/${id}`, { method: 'DELETE' }),
+  },
+
+  tags: {
+    list: () => request<any[]>('/api/tags'),
+    create: (body: { name: string; color?: string }) =>
+      request<any>('/api/tags', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: { name?: string; color?: string | null }) =>
+      request<any>(`/api/tags/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: (id: number) => request<void>(`/api/tags/${id}`, { method: 'DELETE' }),
   },
 
   compile: (body: { sql: string; connectionId?: number; data?: any[]; theme?: string; backend?: string; backends?: string[] }) =>

@@ -119,6 +119,24 @@ export const tenants = sqliteTable('tenants', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const tags = sqliteTable('tags', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  color: text('color'),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
+  createdAt: text('created_at').notNull(),
+});
+
+export const savedQueryTags = sqliteTable('saved_query_tags', {
+  savedQueryId: integer('saved_query_id').notNull(),
+  tagId: integer('tag_id').notNull(),
+});
+
+export const dashboardTags = sqliteTable('dashboard_tags', {
+  dashboardId: integer('dashboard_id').notNull(),
+  tagId: integer('tag_id').notNull(),
+});
+
 export const apiTokens = sqliteTable('api_tokens', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').notNull(),

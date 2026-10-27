@@ -188,11 +188,32 @@ export const CompileResponseSchema = z.object({
 });
 export type CompileResponse = z.infer<typeof CompileResponseSchema>;
 
+export const TagSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  color: z.string().nullable().optional(),
+  createdAt: z.string(),
+});
+export type Tag = z.infer<typeof TagSchema>;
+
+export const CreateTagSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  color: z.string().trim().optional(),
+});
+export type CreateTag = z.infer<typeof CreateTagSchema>;
+
+export const UpdateTagSchema = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
+  color: z.string().trim().nullable().optional(),
+});
+export type UpdateTag = z.infer<typeof UpdateTagSchema>;
+
 export const SavedQueryDtoSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   connectionId: z.number().int(),
   sql: z.string(),
+  tags: z.array(z.string()).default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -202,6 +223,7 @@ export const CreateSavedQuerySchema = z.object({
   name: z.string().min(1),
   connectionId: z.number().int(),
   sql: z.string().min(1),
+  tags: z.array(z.string()).max(10).optional(),
 });
 export type CreateSavedQuery = z.infer<typeof CreateSavedQuerySchema>;
 
@@ -261,6 +283,7 @@ export type CreateDashboard = z.infer<typeof CreateDashboardSchema>;
 export const UpdateDashboardSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
+  tags: z.array(z.string()).max(10).optional(),
 });
 export type UpdateDashboard = z.infer<typeof UpdateDashboardSchema>;
 

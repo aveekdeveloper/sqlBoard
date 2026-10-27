@@ -138,6 +138,22 @@ const BOOTSTRAP_SQL = [
     created_at TEXT NOT NULL
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_unique ON api_tokens (token_hash)`,
+  `CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    color TEXT,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS tags_name_tenant_unique ON tags (name, tenant_id)`,
+  `CREATE TABLE IF NOT EXISTS saved_query_tags (
+    saved_query_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS dashboard_tags (
+    dashboard_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL
+  )`,
 ];
 
 export async function openDatabase(config: SqlboardConfig): Promise<OpenedDatabase> {

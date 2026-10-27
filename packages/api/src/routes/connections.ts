@@ -5,10 +5,13 @@ import { ApiError, badRequest, notFound } from '../errors.js';
 import {
   connections,
   savedQueries,
+  savedQueryTags,
+  tags,
   savedQueryVersions,
   dashboards,
   dashboardItems,
   dashboardVersions,
+  dashboardTags,
   uploads,
 } from '../db/schema.js';
 import type { DrizzleDb } from '../db/client.js';
@@ -28,6 +31,43 @@ import {
 } from '@sqlboard/shared';
 import { QueryCache } from '../cache/query-cache.js';
 import { currentTenant } from '../core/tenancy.js';
+
+async function syncTags(
+  db: DrizzleDb,
+  entityType: 'saved_query' | 'dashboard',
+  entityId: number,
+  tagNames: string[],
+  tenantId: string,
+): Promise<void> {
+  const existingTags = await db.select().from(tags).where(eq(tags.tenantId, tenantId)).all();
+  const tagIds: number[] = [];
+  for (const name of tagNames.slice(0, 10)) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    let tag = existingTags.find((t) => t.name.toLowerCase() === trimmed.toLowerCase());
+    if (!tag) {
+      const now = new Date().toISOString();
+      const palette = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+      const color = palette[Math.floor(Math.random() * palette.length)];
+      const inserted = await db.insert(tags).values({ name: trimmed, color, tenantId, createdAt: now }).returning().get();
+      tag = inserted;
+      existingTags.push(tag);
+    }
+    tagIds.push(tag.id);
+  }
+
+  if (entityType === 'saved_query') {
+    await db.delete(savedQueryTags).where(eq(savedQueryTags.savedQueryId, entityId));
+    for (const tagId of tagIds) {
+      await db.insert(savedQueryTags).values({ savedQueryId: entityId, tagId });
+    }
+  } else {
+    await db.delete(dashboardTags).where(eq(dashboardTags.dashboardId, entityId));
+    for (const tagId of tagIds) {
+      await db.insert(dashboardTags).values({ dashboardId: entityId, tagId });
+    }
+  }
+}
 
 interface RouteDeps {
   db: DrizzleDb;
@@ -226,15 +266,66 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 }
 
 export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.get('/api/saved-queries', async () => {
+  app.get('/api/saved-queries', async (request) => {
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
-    const rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, tenant.id)).all();
+    const url = new URL(request.url, 'http://localhost');
+    const tagsParam = url.searchParams.get('tags');
+    const connectionIdParam = url.searchParams.get('connectionId');
+    const sortBy = url.searchParams.get('sortBy') || 'updatedAt';
+    const sortDir = url.searchParams.get('sortDir') || 'desc';
+
+    let rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, tenant.id)).all();
+
+    // Filter by connection
+    if (connectionIdParam) {
+      const connId = Number(connectionIdParam);
+      rows = rows.filter((r) => r.connectionId === connId);
+    }
+
+    // Filter by tags (OR logic)
+    if (tagsParam) {
+      const tagNames = tagsParam.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (tagNames.length > 0) {
+        const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
+        const matchingTagIds = allTags.filter((t) => tagNames.includes(t.name.toLowerCase())).map((t) => t.id);
+        if (matchingTagIds.length > 0) {
+          const associations = await deps.db.select().from(savedQueryTags).all();
+          const matchingQueryIds = new Set(
+            associations.filter((a) => matchingTagIds.includes(a.tagId)).map((a) => a.savedQueryId),
+          );
+          rows = rows.filter((r) => matchingQueryIds.has(r.id));
+        } else {
+          rows = [];
+        }
+      }
+    }
+
+    // Sort
+    rows.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortBy === 'createdAt') cmp = a.createdAt.localeCompare(b.createdAt);
+      else cmp = a.updatedAt.localeCompare(b.updatedAt);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    // Attach tags to each query
+    const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
+    const allAssociations = await deps.db.select().from(savedQueryTags).all();
+    const tagMap = new Map<number, string[]>();
+    for (const assoc of allAssociations) {
+      if (!tagMap.has(assoc.savedQueryId)) tagMap.set(assoc.savedQueryId, []);
+      const tag = allTags.find((t) => t.id === assoc.tagId);
+      if (tag) tagMap.get(assoc.savedQueryId)!.push(tag.name);
+    }
+
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
       connectionId: row.connectionId,
       sql: row.sql,
+      tags: tagMap.get(row.id) || [],
       latestVersion: row.latestVersion ?? 0,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -263,7 +354,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.post('/api/saved-queries', async (request, reply) => {
     const parsed = z
-      .object({ name: z.string().min(1), connectionId: z.number().int(), sql: z.string().min(1) })
+      .object({ name: z.string().min(1), connectionId: z.number().int(), sql: z.string().min(1), tags: z.array(z.string()).max(10).optional() })
       .safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid saved query', parsed.error.flatten());
 
@@ -296,6 +387,10 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         createdAt: now,
       })
       .run();
+    // Sync tags if provided
+    if (parsed.data.tags && parsed.data.tags.length > 0) {
+      await syncTags(deps.db, 'saved_query', inserted.id, parsed.data.tags, tenant.id);
+    }
     reply.code(201);
     return {
       id: inserted.id,
@@ -316,6 +411,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         connectionId: z.number().int().optional(),
         sql: z.string().min(1).optional(),
         message: z.string().optional(),
+        tags: z.array(z.string()).max(10).optional(),
       })
       .safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid saved query', parsed.error.flatten());
@@ -345,6 +441,11 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       })
       .where(eq(savedQueries.id, Number(id)))
       .run();
+
+    // Update tags if provided
+    if (parsed.data.tags !== undefined) {
+      await syncTags(deps.db, 'saved_query', Number(id), parsed.data.tags, current.tenantId);
+    }
 
     if (changed) {
       const newVersion = (current.latestVersion ?? 0) + 1;
@@ -550,10 +651,16 @@ async function dashboardResponse(deps: RouteDeps, id: number) {
       .all()
   ).reduce((max, entry) => Math.max(max, entry.version), 0);
 
+  // Attach tags
+  const dashTags = await deps.db.select().from(dashboardTags).where(eq(dashboardTags.dashboardId, id)).all();
+  const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, row.tenantId)).all();
+  const tagNames = dashTags.map((a) => allTags.find((t) => t.id === a.tagId)?.name).filter(Boolean) as string[];
+
   return {
     id: row.id,
     name: snapshot.name,
     description: snapshot.description,
+    tags: tagNames,
     filters: snapshot.filters ?? [],
     theme: snapshot.theme,
     colors: snapshot.colors,
@@ -692,14 +799,58 @@ async function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSna
 }
 
 export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.get('/api/dashboards', async () => {
+  app.get('/api/dashboards', async (request) => {
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
-    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, tenant.id)).all();
+    const url = new URL(request.url, 'http://localhost');
+    const tagsParam = url.searchParams.get('tags');
+    const sortBy = url.searchParams.get('sortBy') || 'updatedAt';
+    const sortDir = url.searchParams.get('sortDir') || 'desc';
+
+    let rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, tenant.id)).all();
+
+    // Filter by tags (OR logic)
+    if (tagsParam) {
+      const tagNames = tagsParam.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (tagNames.length > 0) {
+        const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
+        const matchingTagIds = allTags.filter((t) => tagNames.includes(t.name.toLowerCase())).map((t) => t.id);
+        if (matchingTagIds.length > 0) {
+          const associations = await deps.db.select().from(dashboardTags).all();
+          const matchingDashIds = new Set(
+            associations.filter((a) => matchingTagIds.includes(a.tagId)).map((a) => a.dashboardId),
+          );
+          rows = rows.filter((r) => matchingDashIds.has(r.id));
+        } else {
+          rows = [];
+        }
+      }
+    }
+
+    // Sort
+    rows.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortBy === 'createdAt') cmp = a.createdAt.localeCompare(b.createdAt);
+      else cmp = a.updatedAt.localeCompare(b.updatedAt);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    // Attach tags
+    const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
+    const allAssociations = await deps.db.select().from(dashboardTags).all();
+    const tagMap = new Map<number, string[]>();
+    for (const assoc of allAssociations) {
+      if (!tagMap.has(assoc.dashboardId)) tagMap.set(assoc.dashboardId, []);
+      const tag = allTags.find((t) => t.id === assoc.tagId);
+      if (tag) tagMap.get(assoc.dashboardId)!.push(tag.name);
+    }
+
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
+      tags: tagMap.get(row.id) || [],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
@@ -707,7 +858,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
 
   app.post('/api/dashboards', async (request, reply) => {
     const parsed = z
-      .object({ name: z.string().min(1), description: z.string().optional() })
+      .object({ name: z.string().min(1), description: z.string().optional(), tags: z.array(z.string()).max(10).optional() })
       .safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard', parsed.error.flatten());
 
@@ -726,6 +877,11 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .returning()
       .get();
 
+    // Sync tags if provided
+    if (parsed.data.tags && parsed.data.tags.length > 0) {
+      await syncTags(deps.db, 'dashboard', inserted.id, parsed.data.tags, tenant.id);
+    }
+
     const version = await insertVersion(
       deps,
       inserted.id,
@@ -740,6 +896,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       id: inserted.id,
       name: inserted.name,
       description: inserted.description,
+      tags: parsed.data.tags || [],
       createdAt: inserted.createdAt,
       updatedAt: inserted.updatedAt,
     };
@@ -759,6 +916,14 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
 
     await deps.db.update(dashboards).set(patch).where(eq(dashboards.id, numericId)).run();
+
+    // Sync tags if provided
+    if (parsed.data.tags !== undefined) {
+      const { currentTenant } = await import('../core/tenancy.js');
+      const tenant = currentTenant();
+      await syncTags(deps.db, 'dashboard', numericId, parsed.data.tags, tenant.id);
+    }
+
     return await dashboardResponse(deps, numericId);
   });
 

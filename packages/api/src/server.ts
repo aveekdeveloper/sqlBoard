@@ -20,6 +20,7 @@ import {
 import { registerAuthRoutes, requireUser } from './auth/session.js';
 import { registerTokenRoutes } from './routes/tokens.js';
 import { registerTenantRoutes } from './routes/tenants.js';
+import { registerTagRoutes } from './routes/tags.js';
 import { registerMcpRoutes } from './mcp/transport.js';
 import { ROLE_RANK } from './auth/roles.js';
 import { QueryCache } from './cache/query-cache.js';
@@ -264,6 +265,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   registerAuthRoutes(app, db);
   registerTokenRoutes(app, { db });
   registerTenantRoutes(app, { db });
+  registerTagRoutes(app, { db });
   registerConnectionRoutes(app, routeDeps);
   registerSavedQueryRoutes(app, routeDeps);
   registerDashboardRoutes(app, routeDeps);
