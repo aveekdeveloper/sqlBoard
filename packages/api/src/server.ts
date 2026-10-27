@@ -20,6 +20,7 @@ import {
 import { registerAuthRoutes, requireUser } from './auth/session.js';
 import { registerTokenRoutes } from './routes/tokens.js';
 import { registerTenantRoutes } from './routes/tenants.js';
+import { registerMcpRoutes } from './mcp/transport.js';
 import { ROLE_RANK } from './auth/roles.js';
 import { QueryCache } from './cache/query-cache.js';
 import { createStorage } from './storage/index.js';
@@ -268,6 +269,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   registerDashboardRoutes(app, routeDeps);
   registerUploadRoutes(app, routeDeps);
   registerCompileRoute(app, routeDeps);
+  registerMcpRoutes(app, { db, engineFactory, duckDb, cache, secretKey: config.secretKey });
 
   // Serve the built web app (SPA) when present. In dev the Vite dev server owns
   // the frontend, so this is a no-op unless WEB_DIST_DIR (or packages/web/dist)
