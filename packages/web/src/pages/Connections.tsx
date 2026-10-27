@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client.js';
+import { useAuth } from '../auth.js';
 
 const CONNECTION_TYPES = [
   { value: 'duckdb', label: 'File upload (CSV/Parquet/JSON)', fields: [] },
@@ -10,6 +11,7 @@ const CONNECTION_TYPES = [
 ];
 
 export default function Connections() {
+  const { canWrite } = useAuth();
   const [connections, setConnections] = useState<any[]>([]);
   const [uploads, setUploads] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -108,12 +110,14 @@ export default function Connections() {
             Manage database connections and uploaded files.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
-        >
-          {showForm ? 'Cancel' : '+ New connection'}
-        </button>
+        {canWrite && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+          >
+            {showForm ? 'Cancel' : '+ New connection'}
+          </button>
+        )}
       </div>
 
       {status && (
@@ -122,7 +126,7 @@ export default function Connections() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && canWrite && (
         <form onSubmit={createConnection} className="rounded-xl border border-line bg-surface p-4 shadow-card space-y-3">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
@@ -236,18 +240,20 @@ export default function Connections() {
       )}
 
       {/* File upload */}
-      <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-        <h3 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Upload a file</h3>
-        <p className="mt-1 text-[12.5px] text-ink-muted">
-          CSV, Parquet, or JSON — loaded into DuckDB as a table.
-        </p>
-        <input
-          type="file"
-          accept=".csv,.parquet,.json"
-          onChange={handleUpload}
-          className="mt-3 block text-[12px] text-ink-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-paper file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-ink"
-        />
-      </div>
+      {canWrite && (
+        <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+          <h3 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Upload a file</h3>
+          <p className="mt-1 text-[12.5px] text-ink-muted">
+            CSV, Parquet, or JSON — loaded into DuckDB as a table.
+          </p>
+          <input
+            type="file"
+            accept=".csv,.parquet,.json"
+            onChange={handleUpload}
+            className="mt-3 block text-[12px] text-ink-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-paper file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-ink"
+          />
+        </div>
+      )}
 
       {/* Connection list */}
       <div className="space-y-2">
@@ -270,12 +276,14 @@ export default function Connections() {
               >
                 {testing === c.id ? 'Testing...' : 'Test'}
               </button>
-              <button
-                onClick={() => deleteConnection(c.id)}
-                className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
-              >
-                Delete
-              </button>
+              {canWrite && (
+                <button
+                  onClick={() => deleteConnection(c.id)}
+                  className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}

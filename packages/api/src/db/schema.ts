@@ -100,3 +100,16 @@ export const auditLog = sqliteTable('audit_log', {
   resourceId: text('resource_id'),
   createdAt: text('created_at').notNull(),
 });
+
+export const apiTokens = sqliteTable('api_tokens', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull(),
+  name: text('name').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  prefix: text('prefix').notNull(),
+  scope: text('scope').notNull().default('viewer'),
+  expiresAt: text('expires_at'),
+  lastUsedAt: text('last_used_at'),
+  revokedAt: text('revoked_at'),
+  createdAt: text('created_at').notNull(),
+});

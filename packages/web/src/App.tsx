@@ -5,6 +5,9 @@ import SqlWorkbench from './pages/SqlWorkbench.js';
 import Dashboards from './pages/Dashboards.js';
 import DashboardDetail from './pages/DashboardDetail.js';
 import SavedQueries from './pages/SavedQueries.js';
+import Settings from './pages/Settings.js';
+import { setStoredUser } from './api/client.js';
+import { useAuth } from './auth.js';
 
 function getToken(): string | null {
   return localStorage.getItem('sqlboard_token');
@@ -22,12 +25,14 @@ const NAV_ITEMS = [
   { path: '/sql', label: 'SQL Workbench', icon: '📝' },
   { path: '/saved', label: 'Saved Queries', icon: '💾' },
   { path: '/dashboards', label: 'Dashboards', icon: '📊' },
+  { path: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const expired = new URLSearchParams(window.location.search).get('expired') === '1';
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,6 +49,7 @@ function Login() {
     }
     const data = await res.json();
     setToken(data.token);
+    setStoredUser(data.user);
     window.location.href = '/connections';
   }
 
@@ -52,6 +58,11 @@ function Login() {
       <div className="w-full max-w-sm bg-white rounded-lg shadow-sm p-6">
         <h1 className="text-2xl font-semibold mb-1">sqlboard</h1>
         <p className="text-sm text-gray-500 mb-6">Open-source BI for SQL-first teams</p>
+        {expired && !error && (
+          <p className="mb-4 rounded-md border border-[#ecd9b6] bg-[#fbf3e5] px-3 py-2 text-sm text-warning">
+            Your session expired. Sign in again.
+          </p>
+        )}
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -88,8 +99,16 @@ function Login() {
 function Shell({ children }: { children: React.ReactNode }) {
   const token = getToken();
   const location = useLocation();
+  const { user, role } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
   const isDashboardDetail = /^\/dashboards\/[^/]+\/?$/.test(location.pathname);
+
+  function signOut() {
+    setToken(null);
+    setStoredUser(null);
+    window.location.href = '/login';
+  }
+
   return (
     <div
       className={`flex flex-col safe-area-top safe-area-bottom safe-area-x ${
@@ -111,19 +130,26 @@ function Shell({ children }: { children: React.ReactNode }) {
             {item.label}
           </Link>
         ))}
-        <button
-          onClick={() => { setToken(null); window.location.href = '/login'; }}
-          className="ml-auto text-sm text-ink-muted hover:text-ink"
-        >
-          Sign out
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {user?.email && (
+            <span className="hidden text-[11.5px] text-ink-faint lg:inline">{user.email}</span>
+          )}
+          {role && (
+            <span className="rounded-full border border-line px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-ink-muted">
+              {role}
+            </span>
+          )}
+          <button onClick={signOut} className="text-sm text-ink-muted hover:text-ink">
+            Sign out
+          </button>
+        </div>
       </nav>
 
       {!isDashboardDetail && (
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-line bg-surface">
           <span className="font-semibold text-ink">sqlboard</span>
           <button
-            onClick={() => { setToken(null); window.location.href = '/login'; }}
+            onClick={signOut}
             className="text-sm text-ink-muted"
           >
             Sign out
@@ -174,6 +200,7 @@ export default function App() {
       <Route path="/dashboards" element={<Shell><Dashboards /></Shell>} />
       <Route path="/dashboards/:id" element={<Shell><DashboardDetail /></Shell>} />
       <Route path="/saved" element={<Shell><SavedQueries /></Shell>} />
+      <Route path="/settings" element={<Shell><Settings /></Shell>} />
       <Route path="*" element={<Navigate to="/connections" replace />} />
     </Routes>
   );

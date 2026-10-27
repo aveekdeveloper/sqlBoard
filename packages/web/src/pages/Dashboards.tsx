@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
+import { useAuth } from '../auth.js';
 
 const PAGE_SIZE = 9;
 
@@ -10,6 +11,7 @@ export default function Dashboards() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const qc = useQueryClient();
+  const { canWrite } = useAuth();
 
   const { data: dashboards } = useQuery({
     queryKey: ['dashboards'],
@@ -49,15 +51,17 @@ export default function Dashboards() {
             Create, open, and manage your dashboards.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
-        >
-          {showForm ? 'Cancel' : '+ New dashboard'}
-        </button>
+        {canWrite && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+          >
+            {showForm ? 'Cancel' : '+ New dashboard'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && canWrite && (
         <form
           onSubmit={(e) => { e.preventDefault(); if (name.trim()) createMutation.mutate(name.trim()); }}
           className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 shadow-card sm:flex-row"
@@ -103,12 +107,14 @@ export default function Dashboards() {
               <span className="text-[10.5px] text-ink-faint">
                 {new Date(d.createdAt).toLocaleDateString()}
               </span>
-              <button
-                onClick={() => { if (confirm('Delete this dashboard?')) deleteMutation.mutate(d.id); }}
-                className="text-[11.5px] font-medium text-signal hover:underline"
-              >
-                Delete
-              </button>
+              {canWrite && (
+                <button
+                  onClick={() => { if (confirm('Delete this dashboard?')) deleteMutation.mutate(d.id); }}
+                  className="text-[11.5px] font-medium text-signal hover:underline"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}

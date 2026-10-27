@@ -5,9 +5,11 @@ import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
 import * as echarts from 'echarts';
 import { api } from '../api/client.js';
+import { useAuth } from '../auth.js';
 import HistoryDialog from '../dashboard/HistoryDialog.js';
 
 export default function SqlWorkbench() {
+  const { canWrite } = useAuth();
   const [searchParams] = useSearchParams();
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [sqlText, setSqlText] = useState(
@@ -306,12 +308,14 @@ export default function SqlWorkbench() {
           >
             {compiling ? 'Compiling...' : 'Compile & Chart'}
           </button>
-          <button
-            onClick={saveQuery}
-            className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
-          >
-            Save
-          </button>
+          {canWrite && (
+            <button
+              onClick={saveQuery}
+              className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+            >
+              Save
+            </button>
+          )}
           {savedQueryId && (
             <button
               onClick={() => setHistoryOpen(true)}

@@ -47,6 +47,7 @@ import CodePanel from '../dashboard/CodePanel.js';
 import CommitDialog from '../dashboard/CommitDialog.js';
 import HistoryDialog from '../dashboard/HistoryDialog.js';
 import { Button, Dialog, Segmented, Toast, type ToastMessage } from '../dashboard/ui.js';
+import { useAuth } from '../auth.js';
 
 const Grid = GridLayout.WidthProvider(GridLayout);
 
@@ -149,6 +150,7 @@ export default function DashboardDetail() {
   const validId = Number.isFinite(dashboardId) && dashboardId > 0;
   const queryClient = useQueryClient();
   const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { canWrite } = useAuth();
   const draftKey = draftKeyFor(dashboardId);
 
   const dashboardQuery = useQuery({
@@ -622,7 +624,7 @@ export default function DashboardDetail() {
   );
 
   const gridLayouts = useMemo(() => toGridLayouts(doc.items), [doc.items]);
-  const editing = isDesktop && mode === 'edit';
+  const editing = isDesktop && mode === 'edit' && canWrite;
   const canArrange = editing && errors.length === 0;
   const mobileItems = useMemo(
     () =>
@@ -738,15 +740,19 @@ export default function DashboardDetail() {
           </div>
 
           <div className="hidden items-center gap-1.5 md:flex">
-            <Segmented
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: 'view', label: 'View', icon: <Eye size={12} /> },
-                { value: 'edit', label: 'Edit', icon: <Pencil size={12} /> },
-              ]}
-            />
-            <span className="mx-0.5 h-5 w-px bg-line" />
+            {canWrite && (
+              <>
+                <Segmented
+                  value={mode}
+                  onChange={setMode}
+                  options={[
+                    { value: 'view', label: 'View', icon: <Eye size={12} /> },
+                    { value: 'edit', label: 'Edit', icon: <Pencil size={12} /> },
+                  ]}
+                />
+                <span className="mx-0.5 h-5 w-px bg-line" />
+              </>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -785,16 +791,18 @@ export default function DashboardDetail() {
               </button>
             )}
             {editing && <AddBlockMenu onSelect={openAdd} />}
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setCommitOpen(true)}
-              disabled={committing || applying}
-              title="Commit a version"
-            >
-              {committing ? <Loader2 size={12} className="animate-spin" /> : <GitBranch size={12} />}
-              <span className="hidden sm:inline">{dirty ? 'Commit draft' : 'Commit'}</span>
-            </Button>
+            {canWrite && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setCommitOpen(true)}
+                disabled={committing || applying}
+                title="Commit a version"
+              >
+                {committing ? <Loader2 size={12} className="animate-spin" /> : <GitBranch size={12} />}
+                <span className="hidden sm:inline">{dirty ? 'Commit draft' : 'Commit'}</span>
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-1 md:hidden">
@@ -858,7 +866,7 @@ export default function DashboardDetail() {
 
             {doc.items.length === 0 ? (
               <EmptyDashboard
-                canEdit={isDesktop}
+                canEdit={isDesktop && canWrite}
                 onAdd={() => openAdd('chart')}
                 onCode={() => setCodeOpen(true)}
               />

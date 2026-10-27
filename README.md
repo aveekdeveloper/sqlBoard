@@ -86,18 +86,57 @@ docker compose exec sqlboard node packages/api/scripts/seed.cjs
 
 ## For agents
 
-sqlboard is designed to be driven programmatically:
+sqlboard is designed to be driven programmatically. Every `/api/*` route except
+`/api/health` and `/api/auth/login` requires a bearer credential.
 
-- `POST /api/auth/login` — obtain a bearer token.
+**Get a credential.** Sign in with a human account once, then mint a scoped API token
+in **Settings → API tokens** (or `POST /api/tokens`):
+
+```bash
+curl -X POST http://localhost:5173/api/tokens \
+  -H "Authorization: Bearer <session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"agent","scope":"member","expiresInDays":90}'
+```
+
+The response contains `token` (`sb_…`) exactly once; only its hash is stored. A token
+can never grant more than the role of the user who created it. Revoke it with
+`DELETE /api/tokens/:id`.
+
+- `POST /api/auth/login` — obtain a session token.
+- `GET/POST /api/tokens`, `DELETE /api/tokens/:id` — agent credentials.
 - `GET/POST /api/connections` — manage data sources.
 - `POST /api/connections/:id/query` — run SQL.
 - `POST /api/compile` — compile SQL + annotations into an ECharts spec via sqlFlint.
 - `GET/PATCH/DELETE /api/dashboards/:id` and `/api/dashboards/:id/layout` — manage dashboards.
-- `POST /api/dashboards/:id/apply` (state) and `/api/dashboards/:id/versions` — versioned dashboard updates.
+- `PUT /api/dashboards/:id/state` and `/api/dashboards/:id/versions` — versioned dashboard updates.
 - `GET/POST/PATCH/DELETE /api/saved-queries` — reusable, versioned SQL snippets.
 
 Every dashboard is also a SQL-first manifest, so an agent can fetch the manifest text,
 edit it, and apply it back through the same API.
+
+**Concurrency.** Pass `baseVersion` on `PUT /state` or `POST /versions` to make the write
+conditional. A stale write returns `409 VERSION_CONFLICT` instead of forking history.
+
+**Discovery.** The live OpenAPI document is served at `/openapi.json` and browsable at
+`/docs`. `GET /api/health` is public.
+
+## Chart theming
+
+Themes are annotations in the chart's SQL, so a theme travels with the code:
+
+```sql
+-- @chart: bar
+-- @x: month
+-- @y: revenue
+-- @theme: economist          -- nyt | swiss | powerbi-light | economist | …
+-- @colors: #006BA2, #DB444B -- optional custom palette, wins over @theme
+```
+
+Named presets are compiled by sqlFlint into the returned ECharts option. Custom
+`@colors` palettes are applied by sqlboard on the server, so `POST /api/compile` and
+the rendered dashboard always return the same colors. The dashboard Theme editor
+writes these annotations into every chart block for you.
 
 ## License
 

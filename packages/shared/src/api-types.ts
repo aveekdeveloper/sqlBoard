@@ -245,6 +245,8 @@ export const ApplyDashboardStateSchema = z.object({
   items: z.array(CreateDashboardItemSchema),
   message: z.string().optional(),
   kind: z.enum(['manual', 'apply', 'restore']).default('apply'),
+  /** Reject the write if the dashboard has moved past this version. */
+  baseVersion: z.number().int().nonnegative().optional(),
 });
 export type ApplyDashboardState = z.infer<typeof ApplyDashboardStateSchema>;
 
@@ -294,6 +296,7 @@ export type DashboardVersionDetailDto = z.infer<typeof DashboardVersionDetailDto
 
 export const CommitDashboardSchema = z.object({
   message: z.string().min(1).max(200),
+  baseVersion: z.number().int().nonnegative().optional(),
 });
 export type CommitDashboard = z.infer<typeof CommitDashboardSchema>;
 

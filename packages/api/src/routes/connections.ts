@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { badRequest, notFound } from '../errors.js';
+import { ApiError, badRequest, notFound } from '../errors.js';
 import {
   connections,
   savedQueries,
@@ -9,7 +9,6 @@ import {
   dashboards,
   dashboardItems,
   dashboardVersions,
-  sessions,
   uploads,
 } from '../db/schema.js';
 import type { DrizzleDb } from '../db/client.js';
@@ -403,6 +402,23 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
 type DashboardSnapshot = ManifestDashboard;
 
+/**
+ * sqlboard extends sqlFlint with a custom palette annotation:
+ *
+ *   -- @colors: #1d5c4a, #c8412f
+ *
+ * sqlFlint only knows named theme presets, so the palette is applied here, on the
+ * server, so the rendered UI and `POST /api/compile` return the same colors.
+ */
+export function colorsFromAnnotations(sql: string): string[] {
+  const match = sql.match(/^\s*--\s*@colors\s*:\s*(.+)$/im);
+  if (!match) return [];
+  return match[1]
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value));
+}
+
 interface DashboardVersionKind {
   kind: 'manual' | 'apply' | 'restore';
 }
@@ -494,15 +510,29 @@ function serializeSnapshot(deps: RouteDeps, snapshot: DashboardSnapshot): string
   return serializeDashboardManifest(snapshot, connectionList);
 }
 
-function authorIdFrom(request: { headers: Record<string, unknown> }, deps: RouteDeps): number | null {
-  const header = request.headers.authorization;
-  if (typeof header !== 'string') return null;
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  if (!match) return null;
-  const session = deps.db.select().from(sessions).where(eq(sessions.token, match[1])).all()[0];
-  if (!session) return null;
-  if (Date.parse(session.expiresAt) < Date.now()) return null;
-  return session.userId;
+function authorIdFrom(request: { user?: { id: number } }): number | null {
+  return request.user?.id ?? null;
+}
+
+function latestDashboardVersion(deps: RouteDeps, dashboardId: number): number {
+  return deps.db
+    .select({ version: dashboardVersions.version })
+    .from(dashboardVersions)
+    .where(eq(dashboardVersions.dashboardId, dashboardId))
+    .all()
+    .reduce((max, row) => Math.max(max, row.version), 0);
+}
+
+function assertBaseVersion(deps: RouteDeps, dashboardId: number, baseVersion?: number): void {
+  if (baseVersion === undefined) return;
+  const latest = latestDashboardVersion(deps, dashboardId);
+  if (baseVersion !== latest) {
+    throw new ApiError(
+      409,
+      'VERSION_CONFLICT',
+      `Dashboard is at v${latest}, but the request expected v${baseVersion}. Reload and retry.`,
+    );
+  }
 }
 
 function insertVersion(
@@ -513,12 +543,7 @@ function insertVersion(
   kind: DashboardVersionKind['kind'],
   authorId: number | null,
 ) {
-  const versions = deps.db
-    .select({ version: dashboardVersions.version })
-    .from(dashboardVersions)
-    .where(eq(dashboardVersions.dashboardId, dashboardId))
-    .all();
-  const latest = versions.reduce((max, row) => Math.max(max, row.version), 0);
+  const latest = latestDashboardVersion(deps, dashboardId);
   const version = latest + 1;
   const now = new Date().toISOString();
 
@@ -629,7 +654,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       { name: inserted.name, description: inserted.description, filters: [], items: [] },
       'Dashboard created',
       'manual',
-      authorIdFrom(request, deps),
+      authorIdFrom(request),
     );
 
     reply.code(201);
@@ -787,6 +812,8 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const parsed = ApplyDashboardStateSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard state', parsed.error.flatten());
 
+    assertBaseVersion(deps, numericId, parsed.data.baseVersion);
+
     const current = readDashboard(deps, numericId).snapshot;
     const snapshot: DashboardSnapshot = {
       name: parsed.data.name ?? current.name,
@@ -813,7 +840,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       snapshot,
       parsed.data.message ?? 'Apply dashboard code',
       parsed.data.kind,
-      authorIdFrom(request, deps),
+      authorIdFrom(request),
     );
 
     return { ...dashboardResponse(deps, numericId), version };
@@ -901,6 +928,8 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const parsed = CommitDashboardSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid commit', parsed.error.flatten());
 
+    assertBaseVersion(deps, numericId, parsed.data.baseVersion);
+
     const snapshot = readDashboard(deps, numericId).snapshot;
     const version = insertVersion(
       deps,
@@ -908,7 +937,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       snapshot,
       parsed.data.message,
       'manual',
-      authorIdFrom(request, deps),
+      authorIdFrom(request),
     );
     reply.code(201);
     return version;
@@ -934,7 +963,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       snapshot,
       `Restored v${row.version}`,
       'restore',
-      authorIdFrom(request, deps),
+      authorIdFrom(request),
     );
     return { ...dashboardResponse(deps, numericId), version: restored };
   });
@@ -1045,10 +1074,22 @@ export function registerCompileRoute(app: FastifyInstance, deps: RouteDeps): voi
       backends: body.data.backends,
     });
 
+    const palette = colorsFromAnnotations(body.data.sql);
+    let compiled = result.compiled;
+    let echarts = result.echarts ?? null;
+    if (palette.length > 0) {
+      if (compiled?.echarts) {
+        compiled = { ...compiled, echarts: { ...compiled.echarts, color: palette } };
+      }
+      if (echarts) {
+        echarts = { ...echarts, color: palette };
+      }
+    }
+
     return {
       flint: result.flint,
-      echarts: result.echarts,
-      compiled: result.compiled,
+      echarts,
+      compiled,
       diagnostics: result.diagnostics,
       query: data.length > 0 ? { columns: Object.keys(data[0] ?? {}), rowCount: data.length } : null,
     };

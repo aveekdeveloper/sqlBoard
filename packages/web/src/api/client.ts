@@ -39,6 +39,57 @@ export function setToken(token: string | null) {
   else localStorage.removeItem('sqlboard_token');
 }
 
+export interface SessionUser {
+  id: number;
+  email: string;
+  role: 'admin' | 'member' | 'viewer';
+}
+
+export type ApiTokenScope = SessionUser['role'];
+
+export interface ApiTokenDto {
+  id: number;
+  name: string;
+  prefix: string;
+  scope: ApiTokenScope;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedApiToken {
+  id: number;
+  name: string;
+  token: string;
+  prefix: string;
+  scope: ApiTokenScope;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export function getStoredUser(): SessionUser | null {
+  try {
+    const raw = localStorage.getItem('sqlboard_user');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.email !== 'string') return null;
+    return parsed as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUser(user: SessionUser | null) {
+  if (user) localStorage.setItem('sqlboard_user', JSON.stringify(user));
+  else localStorage.removeItem('sqlboard_user');
+}
+
+function clearSession(): void {
+  setToken(null);
+  setStoredUser(null);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {};
@@ -48,7 +99,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error?.message || `HTTP ${res.status}`);
+
+    if (res.status === 401) {
+      clearSession();
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login?expired=1';
+      }
+    }
+
+    const message =
+      res.status === 403
+        ? body?.error?.message || 'You do not have permission to do that.'
+        : body?.error?.message || `HTTP ${res.status}`;
+    throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -61,7 +124,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
-  me: () => request<{ id: number; email: string; role: string }>('/api/auth/me'),
+  me: () => request<SessionUser>('/api/auth/me'),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
 
   connections: {
@@ -156,6 +219,13 @@ export const api = {
         `/api/dashboards/${dashboardId}/versions/${version}/restore`,
         { method: 'POST' },
       ),
+  },
+
+  tokens: {
+    list: () => request<ApiTokenDto[]>('/api/tokens'),
+    create: (body: { name: string; scope?: ApiTokenScope; expiresInDays?: number | null }) =>
+      request<CreatedApiToken>('/api/tokens', { method: 'POST', body: JSON.stringify(body) }),
+    revoke: (id: number) => request<void>(`/api/tokens/${id}`, { method: 'DELETE' }),
   },
 
   compile: (body: { sql: string; connectionId?: number; data?: any[]; theme?: string; backend?: string; backends?: string[] }) =>

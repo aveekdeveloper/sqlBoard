@@ -22,7 +22,7 @@
     "drizzle-orm": "^0.36.0",
     "duckdb": "^1.1.0",
     "pg": "^8.13.0",
-    "sql-to-flint": "^0.2.0",
+    "sql-to-flint": "^0.2.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {

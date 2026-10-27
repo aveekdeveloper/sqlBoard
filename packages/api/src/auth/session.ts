@@ -1,13 +1,22 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { DrizzleDb } from '../db/client.js';
-import { users, sessions } from '../db/schema.js';
+import { apiTokens, sessions, users } from '../db/schema.js';
 import { ApiError, badRequest } from '../errors.js';
+import { ROLE_RANK, effectiveRole, toRole, type Role } from './roles.js';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const LAST_USED_THROTTLE_MS = 60 * 1000;
 
-function hashPassword(password: string): string {
+export interface AuthUser {
+  id: number;
+  email: string;
+  role: Role;
+  tokenId?: number;
+}
+
+export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
@@ -24,6 +33,14 @@ function verifyPassword(password: string, stored: string): boolean {
 
 function generateToken(): string {
   return randomBytes(32).toString('hex');
+}
+
+export function generateApiToken(): string {
+  return `sb_${randomBytes(24).toString('base64url')}`;
+}
+
+export function hashApiToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
@@ -49,14 +66,14 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
     reply.code(200);
     return {
       token,
-      user: { id: user.id, email: user.email, role: user.role },
+      user: { id: user.id, email: user.email, role: toRole(user.role) },
       expiresAt,
     };
   });
 
   app.post('/api/auth/logout', async (request, reply) => {
     const token = extractToken(request);
-    if (token) {
+    if (token && !token.startsWith('sb_')) {
       db.delete(sessions).where(eq(sessions.token, token)).run();
     }
     reply.code(204);
@@ -71,9 +88,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
 export async function requireUser(
   request: { headers: Record<string, string | string[] | undefined> },
   db: DrizzleDb,
-): Promise<{ id: number; email: string; role: string }> {
+): Promise<AuthUser> {
   const token = extractToken(request);
-  if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'missing session token');
+  if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'missing credentials');
+  if (token.startsWith('sb_')) return resolveApiToken(db, token);
 
   const rows = db.select().from(sessions).where(eq(sessions.token, token)).all();
   const session = rows[0];
@@ -85,7 +103,45 @@ export async function requireUser(
   const user = userRows[0];
   if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'user not found');
 
-  return { id: user.id, email: user.email, role: user.role };
+  return { id: user.id, email: user.email, role: toRole(user.role) };
+}
+
+function resolveApiToken(db: DrizzleDb, token: string): AuthUser {
+  const rows = db
+    .select()
+    .from(apiTokens)
+    .where(eq(apiTokens.tokenHash, hashApiToken(token)))
+    .all();
+  const apiToken = rows[0];
+  if (!apiToken || apiToken.revokedAt) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'invalid or revoked API token');
+  }
+  if (apiToken.expiresAt && Date.parse(apiToken.expiresAt) <= Date.now()) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'API token expired');
+  }
+
+  const userRows = db.select().from(users).where(eq(users.id, apiToken.userId)).all();
+  const user = userRows[0];
+  if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'user not found');
+
+  const now = Date.now();
+  if (!apiToken.lastUsedAt || now - Date.parse(apiToken.lastUsedAt) > LAST_USED_THROTTLE_MS) {
+    try {
+      db.update(apiTokens)
+        .set({ lastUsedAt: new Date(now).toISOString() })
+        .where(eq(apiTokens.id, apiToken.id))
+        .run();
+    } catch {
+      // Usage tracking must never block a request.
+    }
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    role: effectiveRole(user.role, apiToken.scope),
+    tokenId: apiToken.id,
+  };
 }
 
 function extractToken(request: { headers: Record<string, string | string[] | undefined> }): string | null {
@@ -96,14 +152,13 @@ function extractToken(request: { headers: Record<string, string | string[] | und
   return match ? match[1] : null;
 }
 
-export function requireRole(role: 'admin' | 'member' | 'viewer') {
-  const rank: Record<string, number> = { viewer: 0, member: 1, admin: 2 };
+export function requireRole(role: Role) {
   return async (
     request: { headers: Record<string, string | string[] | undefined> },
     db: DrizzleDb,
   ) => {
     const user = await requireUser(request, db);
-    if (rank[user.role] < rank[role]) {
+    if (ROLE_RANK[user.role] < ROLE_RANK[role]) {
       throw new ApiError(403, 'FORBIDDEN', `requires ${role} role`);
     }
     return user;

@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
+import { useAuth } from '../auth.js';
 
 const PAGE_SIZE = 8;
 
 export default function SavedQueries() {
   const qc = useQueryClient();
+  const { canWrite } = useAuth();
   const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -94,14 +96,16 @@ export default function SavedQueries() {
                   >
                     Open in workbench
                   </a>
-                  <button
-                    onClick={() => {
-                      if (confirm('Delete this saved query?')) deleteMutation.mutate(q.id);
-                    }}
-                    className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
-                  >
-                    Delete
-                  </button>
+                  {canWrite && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete this saved query?')) deleteMutation.mutate(q.id);
+                      }}
+                      className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
