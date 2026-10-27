@@ -9,7 +9,7 @@ const CONNECTION_TYPES = [
   { value: 'mysql', label: 'MySQL', fields: ['host', 'port', 'database', 'user', 'password'] },
   { value: 'clickhouse', label: 'ClickHouse', fields: ['host', 'port', 'database', 'user', 'password'] },
   { value: 'trino', label: 'Trino', fields: ['host', 'port', 'catalog', 'schema', 'user', 'password'] },
-  { value: 'databricks', label: 'Databricks', fields: ['host', 'httpPath', 'token'] },
+  { value: 'databricks', label: 'Databricks', fields: ['host', 'httpPath', 'token', 'catalog', 'schema'] },
   { value: 'snowflake', label: 'Snowflake', fields: ['account', 'user', 'password', 'warehouse', 'database', 'schema'] },
 ];
 
@@ -70,6 +70,8 @@ export default function Connections() {
         if (form.host) body.host = form.host;
         if (form.httpPath) body.httpPath = form.httpPath;
         if (form.token) body.token = form.token;
+        if (form.catalog) body.catalog = form.catalog;
+        if (form.schema) body.schema = form.schema;
       }
       if (type === 'snowflake') {
         if (form.account) body.account = form.account;

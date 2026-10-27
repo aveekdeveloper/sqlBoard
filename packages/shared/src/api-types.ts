@@ -80,6 +80,8 @@ export const CreateDatabricksConnectionSchema = z.object({
   host: z.string().min(1),
   httpPath: z.string().min(1),
   token: z.string().min(1),
+  catalog: z.string().optional(),
+  schema: z.string().optional(),
 });
 
 export const CreateSnowflakeConnectionSchema = z.object({

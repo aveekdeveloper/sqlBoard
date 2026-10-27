@@ -116,6 +116,8 @@ export class EngineFactory {
         host: String(config.host ?? ''),
         httpPath: String(config.httpPath ?? ''),
         token: String(config.token ?? ''),
+        catalog: config.catalog ? String(config.catalog) : undefined,
+        schema: config.schema ? String(config.schema) : undefined,
       };
       return new DatabricksEngine(dbConfig);
     }
