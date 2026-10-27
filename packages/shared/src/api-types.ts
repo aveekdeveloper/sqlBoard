@@ -105,6 +105,24 @@ export const CreateConnectionRequestSchema = z.discriminatedUnion('type', [
 ]);
 export type CreateConnectionRequest = z.infer<typeof CreateConnectionRequestSchema>;
 
+export const UpdateConnectionRequestSchema = z.object({
+  name: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  database: z.string().optional(),
+  user: z.string().optional(),
+  password: z.string().optional(),
+  ssl: z.boolean().optional(),
+  path: z.string().min(1).optional(),
+  httpPath: z.string().min(1).optional(),
+  token: z.string().min(1).optional(),
+  account: z.string().min(1).optional(),
+  warehouse: z.string().optional(),
+  schema: z.string().optional(),
+  catalog: z.string().min(1).optional(),
+});
+export type UpdateConnectionRequest = z.infer<typeof UpdateConnectionRequestSchema>;
+
 export const ConnectionDtoSchema = z.object({
   id: z.number().int(),
   name: z.string(),

@@ -157,9 +157,18 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
   app.setErrorHandler((error: unknown, _request, reply) => {
     const err = error as { statusCode?: number; code?: string; message?: string; details?: unknown };
-    reply.code(err.statusCode ?? 500).send({
+    // Only our own ApiError carries a meaningful HTTP status. Upstream SDK
+    // errors (Databricks, Snowflake, etc.) may carry a `statusCode` field
+    // (e.g. 401/403) that must NOT propagate as the HTTP status, otherwise the
+    // client treats it as a session failure and logs the user out. Fastify's
+    // own content-type parser errors (FST_ERR_CTP_*) are the exception: they
+    // are genuine 400 client errors.
+    const isApiError = error instanceof ApiError;
+    const isParserError = typeof err.code === 'string' && err.code.startsWith('FST_ERR_CTP');
+    const statusCode = isApiError || isParserError ? (err.statusCode ?? 500) : 500;
+    reply.code(statusCode).send({
       error: {
-        code: err.code ?? 'INTERNAL_ERROR',
+        code: isApiError ? (err.code ?? 'INTERNAL_ERROR') : (err.code ?? 'INTERNAL_ERROR'),
         message: err.message ?? 'Internal server error',
         ...(err.details !== undefined ? { details: err.details } : {}),
       },

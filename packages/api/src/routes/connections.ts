@@ -21,6 +21,7 @@ import {
   DashboardLayoutUpdateSchema,
   RunQueryRequestSchema,
   serializeDashboardManifest,
+  UpdateConnectionRequestSchema,
   UpdateDashboardItemSchema,
   UpdateDashboardSchema,
   type ManifestDashboard,
@@ -73,21 +74,53 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.get('/api/connections/:id', async (request) => {
+  app.patch('/api/connections/:id', async (request) => {
     const { id } = request.params as { id: string };
+    const numericId = Number(id);
     const rows = deps.db
       .select()
       .from(connections)
-      .where(eq(connections.id, Number(id)))
+      .where(eq(connections.id, numericId))
       .all();
-    const row = rows[0];
-    if (!row) throw notFound(`Connection ${id} not found`);
+    const existing = rows[0];
+    if (!existing) throw notFound(`Connection ${id} not found`);
+
+    const parsed = UpdateConnectionRequestSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid connection update', parsed.error.flatten());
+
+    const { decryptJson, encryptJson } = await import('../crypto.js');
+    const currentConfig = decryptJson<Record<string, unknown>>(existing.configEnc, deps.secretKey);
+    const merged = { ...currentConfig };
+    for (const [key, value] of Object.entries(parsed.data)) {
+      if (key === 'name') continue;
+      if (value !== undefined && value !== '' && value !== null) {
+        merged[key] = value;
+      }
+    }
+    const configEnc = encryptJson(merged, deps.secretKey);
+
+    const newName = parsed.data.name ?? existing.name;
+    // Check name uniqueness if name changed
+    if (newName !== existing.name) {
+      const dup = deps.db.select().from(connections).all().find((c) => c.name === newName && c.id !== numericId);
+      if (dup) throw new ApiError(409, 'CONFLICT', `A connection named "${newName}" already exists`);
+    }
+
+    await deps.engineFactory.closeConnection(numericId);
+    deps.cache.clear();
+
+    deps.db
+      .update(connections)
+      .set({ name: newName, configEnc })
+      .where(eq(connections.id, numericId))
+      .run();
+
     return {
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      configSummary: row.type,
-      createdAt: row.createdAt,
+      id: numericId,
+      name: newName,
+      type: existing.type,
+      configSummary: existing.type,
+      createdAt: existing.createdAt,
     };
   });
 

@@ -131,6 +131,7 @@ export const api = {
     list: () => request<ConnectionDto[]>('/api/connections'),
     get: (id: number) => request<any>(`/api/connections/${id}`),
     create: (body: any) => request<any>('/api/connections', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: any) => request<any>(`/api/connections/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     test: (id: number) => request<any>(`/api/connections/${id}/test`, { method: 'POST' }),
     delete: (id: number) => request<void>(`/api/connections/${id}`, { method: 'DELETE' }),
     tables: (id: number) => request<any[]>(`/api/connections/${id}/tables`),

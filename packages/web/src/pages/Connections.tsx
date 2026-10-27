@@ -22,6 +22,7 @@ export default function Connections() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [status, setStatus] = useState('');
   const [testing, setTesting] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   async function load() {
     try {
@@ -34,45 +35,63 @@ export default function Connections() {
 
   useEffect(() => { load(); }, []);
 
-  async function createConnection(e: React.FormEvent) {
+  async function saveConnection(e: React.FormEvent) {
     e.preventDefault();
     setStatus('');
     try {
-      const body: any = { type, name: form.name || 'Untitled' };
-      if (type === 'sqlite') body.path = form.path;
-      if (type === 'postgres') {
-        body.host = form.host; body.port = Number(form.port || 5432);
-        body.database = form.database; body.user = form.user; body.password = form.password;
-        body.ssl = form.ssl === 'true';
-      }
-      if (type === 'mysql') {
-        body.host = form.host; body.port = Number(form.port || 3306);
-        body.database = form.database; body.user = form.user; body.password = form.password;
-        body.ssl = form.ssl === 'true';
+      const body: any = { name: form.name || 'Untitled' };
+      if (type === 'sqlite' && form.path) body.path = form.path;
+      if (['postgres', 'mysql'].includes(type)) {
+        if (form.host) body.host = form.host;
+        if (form.port) body.port = Number(form.port);
+        if (form.database) body.database = form.database;
+        if (form.user) body.user = form.user;
+        if (form.password) body.password = form.password;
+        if (form.ssl) body.ssl = form.ssl === 'true';
       }
       if (type === 'clickhouse') {
-        body.host = form.host; body.port = Number(form.port || 8123);
-        body.database = form.database || 'default'; body.user = form.user || 'default'; body.password = form.password || '';
-        body.ssl = form.ssl === 'true';
+        if (form.host) body.host = form.host;
+        if (form.port) body.port = Number(form.port);
+        if (form.database) body.database = form.database;
+        if (form.user) body.user = form.user;
+        if (form.password) body.password = form.password;
+        if (form.ssl) body.ssl = form.ssl === 'true';
       }
       if (type === 'trino') {
-        body.host = form.host; body.port = Number(form.port || 8080);
-        body.catalog = form.catalog || 'hive'; body.schema = form.schema || 'default';
-        body.user = form.user; body.password = form.password || '';
-        body.ssl = form.ssl === 'true';
+        if (form.host) body.host = form.host;
+        if (form.port) body.port = Number(form.port);
+        if (form.catalog) body.catalog = form.catalog;
+        if (form.schema) body.schema = form.schema;
+        if (form.user) body.user = form.user;
+        if (form.password) body.password = form.password;
+        if (form.ssl) body.ssl = form.ssl === 'true';
       }
       if (type === 'databricks') {
-        body.host = form.host; body.httpPath = form.httpPath; body.token = form.token;
+        if (form.host) body.host = form.host;
+        if (form.httpPath) body.httpPath = form.httpPath;
+        if (form.token) body.token = form.token;
       }
       if (type === 'snowflake') {
-        body.account = form.account; body.user = form.user; body.password = form.password;
-        body.warehouse = form.warehouse; body.database = form.database; body.schema = form.schema;
+        if (form.account) body.account = form.account;
+        if (form.user) body.user = form.user;
+        if (form.password) body.password = form.password;
+        if (form.warehouse) body.warehouse = form.warehouse;
+        if (form.database) body.database = form.database;
+        if (form.schema) body.schema = form.schema;
       }
-      await api.connections.create(body);
+
+      if (editingId) {
+        await api.connections.update(editingId, body);
+        setStatus('Connection updated.');
+      } else {
+        body.type = type;
+        await api.connections.create(body);
+        setStatus('Connection created.');
+      }
       setShowForm(false);
+      setEditingId(null);
       setForm({});
       await load();
-      setStatus('Connection created.');
     } catch (e: any) {
       setStatus(e.message);
     }
@@ -131,7 +150,7 @@ export default function Connections() {
         </div>
         {canWrite && (
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => { setEditingId(null); setForm({}); setShowForm(!showForm); }}
             className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
           >
             {showForm ? 'Cancel' : '+ New connection'}
@@ -146,7 +165,7 @@ export default function Connections() {
       )}
 
       {showForm && canWrite && (
-        <form onSubmit={createConnection} className="rounded-xl border border-line bg-surface p-4 shadow-card space-y-3">
+        <form onSubmit={saveConnection} className="rounded-xl border border-line bg-surface p-4 shadow-card space-y-3">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
               Type
@@ -155,6 +174,7 @@ export default function Connections() {
               value={type}
               onChange={(e) => { setType(e.target.value); setForm({}); }}
               className={inputClass}
+              disabled={!!editingId}
             >
               {CONNECTION_TYPES.filter((t) => t.value !== 'duckdb').map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -259,7 +279,7 @@ export default function Connections() {
             type="submit"
             className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
           >
-            Create
+            {editingId ? 'Save changes' : 'Create'}
           </button>
         </form>
       )}
@@ -302,12 +322,20 @@ export default function Connections() {
                 {testing === c.id ? 'Testing...' : 'Test'}
               </button>
               {canWrite && (
-                <button
-                  onClick={() => deleteConnection(c.id)}
-                  className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
-                >
-                  Delete
-                </button>
+                <>
+                  <button
+                    onClick={() => { setEditingId(c.id); setType(c.type); setForm({ name: c.name }); setShowForm(true); setStatus(''); }}
+                    className="focus-ring rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteConnection(c.id)}
+                    className="focus-ring rounded-md border border-signal/25 bg-signal-soft px-3 py-1.5 text-[12px] font-medium text-signal hover:border-signal/50"
+                  >
+                    Delete
+                  </button>
+                </>
               )}
             </div>
           </div>
