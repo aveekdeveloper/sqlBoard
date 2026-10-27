@@ -71,7 +71,7 @@ export default function Connections() {
         if (form.httpPath) body.httpPath = form.httpPath;
         if (form.token) body.token = form.token;
         if (form.catalog) body.catalog = form.catalog;
-        if (form.schema) body.schema = form.schema;
+        if (form.schema && form.schema.toLowerCase() !== 'default') body.schema = form.schema;
       }
       if (type === 'snowflake') {
         if (form.account) body.account = form.account;
@@ -263,7 +263,7 @@ export default function Connections() {
           {selectedType.fields.includes('schema') && (
             <div>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Schema (optional)</label>
-              <input value={form.schema || ''} onChange={(e) => setForm({ ...form, schema: e.target.value })} className={inputClass} />
+              <input value={form.schema || ''} onChange={(e) => setForm({ ...form, schema: e.target.value })} className={inputClass} placeholder="e.g. default (leave blank for all)" />
             </div>
           )}
           {selectedType.fields.includes('ssl') && (

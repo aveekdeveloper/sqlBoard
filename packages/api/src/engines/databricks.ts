@@ -54,11 +54,10 @@ export class DatabricksEngine implements QueryEngine {
   }
 
   private qualifyTable(name: string): string {
-    // If the name is already qualified (contains a dot), return as-is
     if (name.includes('.')) return name;
     const parts: string[] = [];
     if (this.catalog) parts.push(this.catalog);
-    if (this.schema) parts.push(this.schema);
+    if (this.schema && this.schema.toLowerCase() !== 'default') parts.push(this.schema);
     parts.push(name);
     return parts.join('.');
   }
@@ -78,7 +77,7 @@ export class DatabricksEngine implements QueryEngine {
     await this.ensureReady();
     const req: { catalogName?: string; schemaName?: string } = {};
     if (this.catalog) req.catalogName = this.catalog;
-    if (this.schema) req.schemaName = this.schema;
+    if (this.schema && this.schema.toLowerCase() !== 'default') req.schemaName = this.schema;
     const operation = await this.session!.getTables(req);
     await operation.finished();
     const rows = await operation.fetchAll();
@@ -87,9 +86,9 @@ export class DatabricksEngine implements QueryEngine {
     const seen = new Set<string>();
     const result: TableInfo[] = [];
     for (const r of arr) {
-      const catalog = String(r.catalogName ?? r.CATALOG_NAME ?? r.catalog_name ?? this.catalog ?? '');
-      const schema = String(r.schemaName ?? r.SCHEMA_NAME ?? r.schema_name ?? this.schema ?? '');
-      const table = String(r.tableName ?? r.TABLE_NAME ?? r.table_name ?? '');
+      const catalog = String(r.TABLE_CAT ?? r.catalogName ?? r.CATALOG_NAME ?? r.catalog_name ?? this.catalog ?? '');
+      const schema = String(r.TABLE_SCHEM ?? r.schemaName ?? r.SCHEMA_NAME ?? r.schema_name ?? this.schema ?? '');
+      const table = String(r.TABLE_NAME ?? r.tableName ?? r.TABLE_NAME ?? r.table_name ?? '');
       if (!table) continue;
       const qualified = [catalog, schema, table].filter(Boolean).join('.');
       if (seen.has(qualified)) continue;
