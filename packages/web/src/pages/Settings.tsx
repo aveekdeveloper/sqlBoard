@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, KeyRound, Trash2 } from 'lucide-react';
 import {
@@ -307,6 +307,173 @@ export default function Settings() {
   ${typeof window !== 'undefined' ? window.location.origin : ''}/api/dashboards`}
         </pre>
       </section>
+
+      <section className="rounded-xl border border-line bg-surface p-4 shadow-card">
+        <div className="flex items-start gap-2">
+          <KeyRound size={15} className="mt-0.5 text-ink-muted" />
+          <div>
+            <h3 className="text-[13px] font-semibold text-ink">MCP server (for AI agents)</h3>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-muted">
+              sqlboard exposes a Model Context Protocol endpoint so any LLM harness
+              (semantix, Open WebUI, Claude Desktop, etc.) can use it as a
+              headless BI engine. Authenticate with an API token and optionally
+              set the{' '}
+              <code className="rounded bg-paper px-1 py-0.5 font-mono text-[10.5px]">
+                X-Tenant
+              </code>{' '}
+              header for multi-tenant scoping.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+              Endpoint
+            </span>
+            <code className="flex-1 overflow-x-auto rounded-md bg-paper px-2.5 py-1.5 font-mono text-[11px] text-ink">
+              ${typeof window !== 'undefined' ? window.location.origin : ''}/mcp
+            </code>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+              Relative
+            </span>
+            <code className="flex-1 overflow-x-auto rounded-md bg-paper px-2.5 py-1.5 font-mono text-[11px] text-ink">
+              /mcp
+            </code>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+            Semantix / Open WebUI provisioning
+          </div>
+          <pre className="mt-1.5 overflow-x-auto rounded-md bg-paper px-3 py-2 font-mono text-[10.5px] leading-relaxed text-ink-muted">
+{`{
+  "transport": "http",
+  "url": "${typeof window !== 'undefined' ? window.location.origin : ''}/mcp",
+  "headers": {
+    "Authorization": "Bearer sb_...",
+    "X-Tenant": "default"
+  }
+}`}
+          </pre>
+        </div>
+
+        <div className="mt-3">
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+            Test with curl
+          </div>
+          <pre className="mt-1.5 overflow-x-auto rounded-md bg-paper px-3 py-2 font-mono text-[10.5px] leading-relaxed text-ink-muted">
+{`curl -X POST ${typeof window !== 'undefined' ? window.location.origin : ''}/mcp \\
+  -H "Authorization: Bearer sb_..." \\
+  -H "X-Tenant: default" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: application/json, text/event-stream" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'`}
+          </pre>
+        </div>
+
+        <McpToolsList />
+      </section>
+    </div>
+  );
+}
+
+function McpToolsList() {
+  const [tools, setTools] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let sessionId: string | null = null;
+    (async () => {
+      try {
+        const token = localStorage.getItem('sqlboard_token');
+        const tenant = localStorage.getItem('sqlboard_tenant');
+        const tenantSlug = tenant ? JSON.parse(tenant)?.slug : 'default';
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/event-stream',
+        };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (tenantSlug) headers['X-Tenant'] = tenantSlug;
+
+        const initRes = await fetch('/mcp', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: 1, method: 'initialize',
+            params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'sqlboard-settings', version: '1.0' } },
+          }),
+        });
+        sessionId = initRes.headers.get('mcp-session-id');
+        if (!sessionId) throw new Error('No session ID returned');
+
+        const listRes = await fetch('/mcp', {
+          method: 'POST',
+          headers: { ...headers, 'mcp-session-id': sessionId },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+        });
+        const text = await listRes.text();
+        const dataLine = text.split('\n').find((l) => l.startsWith('data:'));
+        if (!dataLine) throw new Error('No data in response');
+        const parsed = JSON.parse(dataLine.replace('data: ', ''));
+        setTools(parsed.result?.tools || []);
+
+        // Close session
+        await fetch('/mcp', { method: 'DELETE', headers: { ...headers, 'mcp-session-id': sessionId } });
+      } catch (e: any) {
+        setError(e.message || 'Failed to load tools');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mt-3 text-[11.5px] text-ink-faint">Loading available tools…</div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="mt-3 rounded-md border border-line bg-paper px-3 py-2 text-[11.5px] text-signal">
+        Could not load tools: {error}
+      </div>
+    );
+  }
+
+  const grouped: Record<string, any[]> = {};
+  for (const t of tools) {
+    const group = t.name.startsWith('create_') || t.name.startsWith('apply_') || t.name.startsWith('commit_') || t.name.startsWith('delete_')
+      ? 'Write'
+      : t.name.startsWith('list_') || t.name.startsWith('get_')
+        ? 'Read'
+        : 'Other';
+    if (!grouped[group]) grouped[group] = [];
+    grouped[group].push(t);
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+        Available tools ({tools.length})
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {tools.map((t) => (
+          <div
+            key={t.name}
+            className="rounded-md border border-line bg-paper px-2.5 py-2"
+          >
+            <div className="font-mono text-[11px] font-medium text-ink">{t.name}</div>
+            <div className="mt-0.5 text-[10.5px] text-ink-muted line-clamp-2">
+              {t.description}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
