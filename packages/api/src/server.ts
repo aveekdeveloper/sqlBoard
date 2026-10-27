@@ -52,6 +52,13 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
   const app = Fastify({ logger: true });
 
+  await app.register(import('@fastify/cors'), {
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: false,
+  });
+
   // Clients routinely send `Content-Type: application/json` on DELETE/POST with no body.
   // Fastify's default parser rejects that with 400, so treat an empty body as absent.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {

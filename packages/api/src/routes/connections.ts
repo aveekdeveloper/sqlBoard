@@ -128,9 +128,14 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.post('/api/connections/:id/test', async (request) => {
     const { id } = request.params as { id: string };
-    const engine = await deps.engineFactory.forConnectionId(Number(id));
-    const tables = await engine.listTables();
-    return { ok: true, tableCount: tables.length, tables };
+    const numericId = Number(id);
+    try {
+      const engine = await deps.engineFactory.forConnectionId(numericId);
+      const tables = await engine.listTables();
+      return { ok: true, tableCount: tables.length, tables: tables.slice(0, 50) };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
   });
 
   app.get('/api/connections/:id/tables', async (request) => {
