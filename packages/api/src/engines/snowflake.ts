@@ -22,7 +22,9 @@ export class SnowflakeEngine implements QueryEngine {
   private conn: snowflake.Connection | null = null;
   private ready: Promise<void> | null = null;
 
-  constructor(private readonly config: SnowflakeConfig) {}
+  constructor(private readonly config: SnowflakeConfig) {
+    snowflake.configure({ logLevel: 'ERROR', logFilePath: undefined, additionalLogToConsole: false });
+  }
 
   private async ensureReady(): Promise<void> {
     if (this.conn) return;
