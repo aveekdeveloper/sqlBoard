@@ -8,6 +8,54 @@ import { BlockEmpty, BlockError, BlockLoading } from './BlockState.js';
 const FONT_STACK =
   "Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif";
 
+export function styleAxes(option: Record<string, unknown>): Record<string, unknown> {
+  const formatNumber = (value: number): string => {
+    if (!Number.isFinite(value)) return String(value);
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (abs >= 1_000) return (value / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+    if (Number.isInteger(value)) return value.toLocaleString();
+    return value.toFixed(2);
+  };
+
+  const styleAxis = (axis: unknown) => {
+    if (!axis || typeof axis !== 'object' || Array.isArray(axis)) return axis;
+    const a = axis as Record<string, unknown>;
+    const labels = Array.isArray(a.data) ? a.data : [];
+    const maxLabelLen = labels.reduce((max: number, l: unknown) => Math.max(max, String(l ?? '').length), 0);
+    const rotate = maxLabelLen > 12 ? 45 : maxLabelLen > 8 ? 30 : 0;
+    return {
+      ...a,
+      axisLabel: {
+        ...(a.axisLabel as Record<string, unknown> | undefined),
+        rotate,
+        interval: 'auto',
+        hideOverlap: true,
+        formatter: (val: unknown) => {
+          if (typeof val === 'number') return formatNumber(val);
+          return String(val ?? '');
+        },
+      },
+    };
+  };
+
+  const xAxis = Array.isArray(option.xAxis)
+    ? option.xAxis.map(styleAxis)
+    : styleAxis(option.xAxis);
+  const yAxis = Array.isArray(option.yAxis)
+    ? option.yAxis.map(styleAxis)
+    : styleAxis(option.yAxis);
+
+  const xRotated = Array.isArray(xAxis)
+    ? xAxis.some((a: any) => (a?.axisLabel?.rotate ?? 0) > 0)
+    : (xAxis as any)?.axisLabel?.rotate > 0;
+  const grid = option.grid && typeof option.grid === 'object' && !Array.isArray(option.grid)
+    ? { ...(option.grid as object), bottom: xRotated ? 60 : 8 }
+    : option.grid;
+
+  return { ...option, xAxis, yAxis, grid };
+}
+
 function styleLegend(legend: unknown): unknown {
   if (!legend) return legend;
   if (Array.isArray(legend)) {
@@ -68,7 +116,7 @@ function buildOption(raw: Record<string, unknown>): EChartsOption {
       ? { containLabel: true, left: 10, right: 14, top: 16, bottom: 8, ...(grid as object) }
       : (grid as object | undefined);
 
-  return {
+  const styled = styleAxes({
     ...rest,
     backgroundColor: 'transparent',
     animationDuration: 420,
@@ -102,7 +150,9 @@ function buildOption(raw: Record<string, unknown>): EChartsOption {
         },
       },
     ],
-  } as EChartsOption;
+  } as Record<string, unknown>);
+
+  return styled as EChartsOption;
 }
 
 export default function ChartBody({
