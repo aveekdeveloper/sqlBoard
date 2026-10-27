@@ -39,7 +39,7 @@ interface RouteDeps {
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/connections', async () => {
-    const rows = deps.db.select().from(connections).all();
+    const rows = await deps.db.select().from(connections).all();
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -53,13 +53,13 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const parsed = CreateConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid connection payload', parsed.error.flatten());
 
-    const existing = deps.db.select().from(connections).all().find((c) => c.name === parsed.data.name);
+    const existing = (await deps.db.select().from(connections).all()).find((c) => c.name === parsed.data.name);
     if (existing) throw new ApiError(409, 'CONFLICT', `A connection named "${parsed.data.name}" already exists`);
 
     const { encryptJson } = await import('../crypto.js');
     const configEnc = encryptJson(parsed.data, deps.secretKey);
     const now = new Date().toISOString();
-    const inserted = deps.db
+    const inserted = await deps.db
       .insert(connections)
       .values({ name: parsed.data.name, type: parsed.data.type, configEnc, createdAt: now })
       .returning()
@@ -77,7 +77,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
   app.patch('/api/connections/:id', async (request) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(connections)
       .where(eq(connections.id, numericId))
@@ -102,14 +102,14 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const newName = parsed.data.name ?? existing.name;
     // Check name uniqueness if name changed
     if (newName !== existing.name) {
-      const dup = deps.db.select().from(connections).all().find((c) => c.name === newName && c.id !== numericId);
+      const dup = (await deps.db.select().from(connections).all()).find((c) => c.name === newName && c.id !== numericId);
       if (dup) throw new ApiError(409, 'CONFLICT', `A connection named "${newName}" already exists`);
     }
 
     await deps.engineFactory.closeConnection(numericId);
     deps.cache.clear();
 
-    deps.db
+    await deps.db
       .update(connections)
       .set({ name: newName, configEnc })
       .where(eq(connections.id, numericId))
@@ -127,7 +127,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
   app.delete('/api/connections/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(connections)
       .where(eq(connections.id, numericId))
@@ -135,7 +135,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     if (rows.length === 0) throw notFound(`Connection ${id} not found`);
     await deps.engineFactory.closeConnection(numericId);
     deps.cache.clear();
-    deps.db.delete(connections).where(eq(connections.id, numericId)).run();
+    await deps.db.delete(connections).where(eq(connections.id, numericId)).run();
     reply.code(204);
   });
 
@@ -213,16 +213,8 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 }
 
 export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const listVersions = (savedQueryId: number) =>
-    deps.db
-      .select()
-      .from(savedQueryVersions)
-      .where(eq(savedQueryVersions.savedQueryId, savedQueryId))
-      .all()
-      .sort((a, b) => a.version - b.version);
-
   app.get('/api/saved-queries', async () => {
-    const rows = deps.db.select().from(savedQueries).all();
+    const rows = await deps.db.select().from(savedQueries).all();
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -236,7 +228,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.get('/api/saved-queries/:id', async (request) => {
     const { id } = request.params as { id: string };
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
@@ -261,7 +253,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     if (!parsed.success) throw badRequest('Invalid saved query', parsed.error.flatten());
 
     const now = new Date().toISOString();
-    const inserted = deps.db
+    const inserted = await deps.db
       .insert(savedQueries)
       .values({
         name: parsed.data.name,
@@ -273,7 +265,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       })
       .returning()
       .get();
-    deps.db
+    await deps.db
       .insert(savedQueryVersions)
       .values({
         savedQueryId: inserted.id,
@@ -310,7 +302,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       .safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid saved query', parsed.error.flatten());
 
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
@@ -324,7 +316,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     const changed = nextSql !== current.sql || nextName !== current.name || nextConnection !== current.connectionId;
 
     const now = new Date().toISOString();
-    deps.db
+    await deps.db
       .update(savedQueries)
       .set({
         name: nextName,
@@ -338,7 +330,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
     if (changed) {
       const newVersion = (current.latestVersion ?? 0) + 1;
-      deps.db
+      await deps.db
         .insert(savedQueryVersions)
         .values({
           savedQueryId: Number(id),
@@ -353,11 +345,12 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         .run();
     }
 
-    const updated = deps.db
+    const updated = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all()[0];
+      .get();
+    if (!updated) throw notFound(`Not found`);
     return {
       id: updated.id,
       name: updated.name,
@@ -371,17 +364,17 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.get('/api/saved-queries/:id/versions', async (request) => {
     const { id } = request.params as { id: string };
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
       .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
-    const versions = deps.db
+    const versions = (await deps.db
       .select()
       .from(savedQueryVersions)
       .where(eq(savedQueryVersions.savedQueryId, Number(id)))
-      .all()
+      .all())
       .sort((a, b) => a.version - b.version);
     return versions.map((v) => ({
       id: v.id,
@@ -396,29 +389,29 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.post('/api/saved-queries/:id/restore/:version', async (request) => {
     const { id, version } = request.params as { id: string; version: string };
-    const queryRows = deps.db
+    const queryRows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
       .all();
     if (queryRows.length === 0) throw notFound(`Saved query ${id} not found`);
-    const versionRows = deps.db
+    const versionRows = (await deps.db
       .select()
       .from(savedQueryVersions)
       .where(eq(savedQueryVersions.savedQueryId, Number(id)))
-      .all()
+      .all())
       .filter((v) => v.version === Number(version));
     if (versionRows.length === 0) throw notFound(`Version ${version} not found`);
     const target = versionRows[0];
     const current = queryRows[0];
     const now = new Date().toISOString();
     const newVersion = (current.latestVersion ?? 0) + 1;
-    deps.db
+    await deps.db
       .update(savedQueries)
       .set({ sql: target.sql, updatedAt: now, latestVersion: newVersion })
       .where(eq(savedQueries.id, Number(id)))
       .run();
-    deps.db
+    await deps.db
       .insert(savedQueryVersions)
       .values({
         savedQueryId: Number(id),
@@ -431,11 +424,12 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         createdAt: now,
       })
       .run();
-    const updated = deps.db
+    const updated = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all()[0];
+      .get();
+    if (!updated) throw notFound(`Not found`);
     return {
       id: updated.id,
       name: updated.name,
@@ -449,14 +443,14 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.delete('/api/saved-queries/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
       .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
-    deps.db.delete(savedQueryVersions).where(eq(savedQueryVersions.savedQueryId, Number(id))).run();
-    deps.db.delete(savedQueries).where(eq(savedQueries.id, Number(id))).run();
+    await deps.db.delete(savedQueryVersions).where(eq(savedQueryVersions.savedQueryId, Number(id))).run();
+    await deps.db.delete(savedQueries).where(eq(savedQueries.id, Number(id))).run();
     reply.code(204);
   });
 }
@@ -494,13 +488,13 @@ function parseConfig(raw: string | null): Record<string, unknown> | null {
   }
 }
 
-function readDashboard(deps: RouteDeps, id: number): {
+async function readDashboard(deps: RouteDeps, id: number): Promise<{
   row: typeof dashboards.$inferSelect;
   snapshot: DashboardSnapshot;
-} {
-  const row = deps.db.select().from(dashboards).where(eq(dashboards.id, id)).all()[0];
+}> {
+  const row = await deps.db.select().from(dashboards).where(eq(dashboards.id, id)).get();
   if (!row) throw notFound(`Dashboard ${id} not found`);
-  const items = deps.db
+  const items = await deps.db
     .select()
     .from(dashboardItems)
     .where(eq(dashboardItems.dashboardId, id))
@@ -528,15 +522,15 @@ function readDashboard(deps: RouteDeps, id: number): {
   };
 }
 
-function dashboardResponse(deps: RouteDeps, id: number) {
-  const { row, snapshot } = readDashboard(deps, id);
-  const latestVersion =
-    deps.db
+async function dashboardResponse(deps: RouteDeps, id: number) {
+  const { row, snapshot } = await readDashboard(deps, id);
+  const latestVersion = (
+    await deps.db
       .select({ version: dashboardVersions.version })
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, id))
       .all()
-      .reduce((max, entry) => Math.max(max, entry.version), 0);
+  ).reduce((max, entry) => Math.max(max, entry.version), 0);
 
   return {
     id: row.id,
@@ -563,8 +557,8 @@ function dashboardResponse(deps: RouteDeps, id: number) {
   };
 }
 
-function serializeSnapshot(deps: RouteDeps, snapshot: DashboardSnapshot): string {
-  const connectionList = deps.db
+async function serializeSnapshot(deps: RouteDeps, snapshot: DashboardSnapshot): Promise<string> {
+  const connectionList = await deps.db
     .select({ id: connections.id, name: connections.name })
     .from(connections)
     .all();
@@ -575,18 +569,19 @@ function authorIdFrom(request: { user?: { id: number } }): number | null {
   return request.user?.id ?? null;
 }
 
-function latestDashboardVersion(deps: RouteDeps, dashboardId: number): number {
-  return deps.db
-    .select({ version: dashboardVersions.version })
-    .from(dashboardVersions)
-    .where(eq(dashboardVersions.dashboardId, dashboardId))
-    .all()
-    .reduce((max, row) => Math.max(max, row.version), 0);
+async function latestDashboardVersion(deps: RouteDeps, dashboardId: number): Promise<number> {
+  return (
+    await deps.db
+      .select({ version: dashboardVersions.version })
+      .from(dashboardVersions)
+      .where(eq(dashboardVersions.dashboardId, dashboardId))
+      .all()
+  ).reduce((max, row) => Math.max(max, row.version), 0);
 }
 
-function assertBaseVersion(deps: RouteDeps, dashboardId: number, baseVersion?: number): void {
+async function assertBaseVersion(deps: RouteDeps, dashboardId: number, baseVersion?: number): Promise<void> {
   if (baseVersion === undefined) return;
-  const latest = latestDashboardVersion(deps, dashboardId);
+  const latest = await latestDashboardVersion(deps, dashboardId);
   if (baseVersion !== latest) {
     throw new ApiError(
       409,
@@ -596,7 +591,7 @@ function assertBaseVersion(deps: RouteDeps, dashboardId: number, baseVersion?: n
   }
 }
 
-function insertVersion(
+async function insertVersion(
   deps: RouteDeps,
   dashboardId: number,
   snapshot: DashboardSnapshot,
@@ -604,11 +599,11 @@ function insertVersion(
   kind: DashboardVersionKind['kind'],
   authorId: number | null,
 ) {
-  const latest = latestDashboardVersion(deps, dashboardId);
+  const latest = await latestDashboardVersion(deps, dashboardId);
   const version = latest + 1;
   const now = new Date().toISOString();
 
-  const inserted = deps.db
+  const inserted = await deps.db
     .insert(dashboardVersions)
     .values({
       dashboardId,
@@ -618,7 +613,7 @@ function insertVersion(
       authorId,
       kind,
       snapshotJson: JSON.stringify(snapshot),
-      codeText: serializeSnapshot(deps, snapshot),
+      codeText: await serializeSnapshot(deps, snapshot),
       createdAt: now,
     })
     .returning()
@@ -636,17 +631,16 @@ function insertVersion(
   };
 }
 
-function touchDashboard(deps: RouteDeps, id: number): void {
-  deps.db
+async function touchDashboard(deps: RouteDeps, id: number): Promise<void> {
+  await deps.db
     .update(dashboards)
     .set({ updatedAt: new Date().toISOString() })
-    .where(eq(dashboards.id, id))
-    .run();
+    .where(eq(dashboards.id, id));
 }
 
-function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot): void {
+async function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot): Promise<void> {
   const now = new Date().toISOString();
-  deps.db
+  await deps.db
     .update(dashboards)
     .set({
       name: snapshot.name,
@@ -659,10 +653,10 @@ function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot)
     .where(eq(dashboards.id, id))
     .run();
 
-  deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, id)).run();
+  await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, id)).run();
 
   for (const item of snapshot.items) {
-    deps.db
+    await deps.db
       .insert(dashboardItems)
       .values({
         dashboardId: id,
@@ -681,7 +675,7 @@ function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot)
 
 export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/dashboards', async () => {
-    const rows = deps.db.select().from(dashboards).all();
+    const rows = await deps.db.select().from(dashboards).all();
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -698,7 +692,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!parsed.success) throw badRequest('Invalid dashboard', parsed.error.flatten());
 
     const now = new Date().toISOString();
-    const inserted = deps.db
+    const inserted = await deps.db
       .insert(dashboards)
       .values({
         name: parsed.data.name,
@@ -709,7 +703,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .returning()
       .get();
 
-    insertVersion(
+    const version = await insertVersion(
       deps,
       inserted.id,
       { name: inserted.name, description: inserted.description, filters: [], items: [] },
@@ -733,7 +727,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const numericId = Number(id);
     const parsed = UpdateDashboardSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard update', parsed.error.flatten());
-    readDashboard(deps, numericId);
+    await readDashboard(deps, numericId);
 
     const patch: Partial<typeof dashboards.$inferInsert> = {
       updatedAt: new Date().toISOString(),
@@ -741,25 +735,25 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (parsed.data.name !== undefined) patch.name = parsed.data.name;
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
 
-    deps.db.update(dashboards).set(patch).where(eq(dashboards.id, numericId)).run();
-    return dashboardResponse(deps, numericId);
+    await deps.db.update(dashboards).set(patch).where(eq(dashboards.id, numericId)).run();
+    return await dashboardResponse(deps, numericId);
   });
 
   app.get('/api/dashboards/:id', async (request) => {
     const { id } = request.params as { id: string };
-    return dashboardResponse(deps, Number(id));
+    return await dashboardResponse(deps, Number(id));
   });
 
   app.post('/api/dashboards/:id/items', async (request, reply) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
+    await readDashboard(deps, numericId);
 
     const parsed = CreateDashboardItemSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard item', parsed.error.flatten());
 
     const now = new Date().toISOString();
-    const inserted = deps.db
+    const inserted = await deps.db
       .insert(dashboardItems)
       .values({
         dashboardId: numericId,
@@ -773,7 +767,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       })
       .returning()
       .get();
-    touchDashboard(deps, numericId);
+    await touchDashboard(deps, numericId);
 
     reply.code(201);
     return {
@@ -793,11 +787,11 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const { id, itemId } = request.params as { id: string; itemId: string };
     const numericId = Number(id);
     const numericItemId = Number(itemId);
-    const existing = deps.db
+    const existing = await deps.db
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, numericItemId))
-      .all()[0];
+      .get();
     if (!existing || existing.dashboardId !== numericId) {
       throw notFound(`Dashboard item ${itemId} not found`);
     }
@@ -816,19 +810,20 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (parsed.data.layout !== undefined) patch.layoutJson = JSON.stringify(parsed.data.layout);
 
     if (Object.keys(patch).length > 0) {
-      deps.db
+      await deps.db
         .update(dashboardItems)
         .set(patch)
         .where(eq(dashboardItems.id, numericItemId))
         .run();
-      touchDashboard(deps, numericId);
+      await touchDashboard(deps, numericId);
     }
 
-    const updated = deps.db
+    const updated = await deps.db
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, numericItemId))
-      .all()[0];
+      .get();
+    if (!updated) throw notFound(`Not found`);
     return {
       id: updated.id,
       dashboardId: updated.dashboardId,
@@ -845,37 +840,37 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.put('/api/dashboards/:id/layout', async (request) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
+    await readDashboard(deps, numericId);
     const parsed = DashboardLayoutUpdateSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid layout update', parsed.error.flatten());
 
     for (const entry of parsed.data.items) {
-      const existing = deps.db
+      const existing = await deps.db
         .select({ id: dashboardItems.id, dashboardId: dashboardItems.dashboardId })
         .from(dashboardItems)
         .where(eq(dashboardItems.id, entry.id))
-        .all()[0];
+        .get();
       if (!existing || existing.dashboardId !== numericId) continue;
-      deps.db
+      await deps.db
         .update(dashboardItems)
         .set({ layoutJson: JSON.stringify(entry.layout) })
         .where(eq(dashboardItems.id, entry.id))
         .run();
     }
-    touchDashboard(deps, numericId);
-    return dashboardResponse(deps, numericId);
+    await touchDashboard(deps, numericId);
+    return await dashboardResponse(deps, numericId);
   });
 
   app.put('/api/dashboards/:id/state', async (request) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
+    await readDashboard(deps, numericId);
     const parsed = ApplyDashboardStateSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard state', parsed.error.flatten());
 
-    assertBaseVersion(deps, numericId, parsed.data.baseVersion);
+    await assertBaseVersion(deps, numericId, parsed.data.baseVersion);
 
-    const current = readDashboard(deps, numericId).snapshot;
+    const current = (await readDashboard(deps, numericId)).snapshot;
     const snapshot: DashboardSnapshot = {
       name: parsed.data.name ?? current.name,
       description:
@@ -894,8 +889,8 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       })),
     };
 
-    applySnapshot(deps, numericId, snapshot);
-    const version = insertVersion(
+    await applySnapshot(deps, numericId, snapshot);
+    const version = await insertVersion(
       deps,
       numericId,
       snapshot,
@@ -904,13 +899,14 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       authorIdFrom(request),
     );
 
-    return { ...dashboardResponse(deps, numericId), version };
+    const response = await dashboardResponse(deps, numericId);
+    return { ...response, version };
   });
 
   app.delete('/api/dashboards/:id/items/:itemId', async (request, reply) => {
     const { id, itemId } = request.params as { id: string; itemId: string };
     const numericId = Number(id);
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, Number(itemId)))
@@ -918,26 +914,26 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (rows.length === 0 || rows[0].dashboardId !== numericId) {
       throw notFound(`Dashboard item ${itemId} not found`);
     }
-    deps.db.delete(dashboardItems).where(eq(dashboardItems.id, Number(itemId))).run();
-    touchDashboard(deps, numericId);
+    await deps.db.delete(dashboardItems).where(eq(dashboardItems.id, Number(itemId))).run();
+    await touchDashboard(deps, numericId);
     reply.code(204);
   });
 
   app.delete('/api/dashboards/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
-    deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, numericId)).run();
-    deps.db.delete(dashboardVersions).where(eq(dashboardVersions.dashboardId, numericId)).run();
-    deps.db.delete(dashboards).where(eq(dashboards.id, numericId)).run();
+    await readDashboard(deps, numericId);
+    await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, numericId)).run();
+    await deps.db.delete(dashboardVersions).where(eq(dashboardVersions.dashboardId, numericId)).run();
+    await deps.db.delete(dashboards).where(eq(dashboards.id, numericId)).run();
     reply.code(204);
   });
 
   app.get('/api/dashboards/:id/versions', async (request) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
-    const rows = deps.db
+    await readDashboard(deps, numericId);
+    const rows = await deps.db
       .select()
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, numericId))
@@ -960,13 +956,12 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.get('/api/dashboards/:id/versions/:version', async (request) => {
     const { id, version } = request.params as { id: string; version: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
-    const row = deps.db
+    await readDashboard(deps, numericId);
+    const row = (await deps.db
       .select()
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, numericId))
-      .all()
-      .find((entry) => entry.version === Number(version));
+      .all()).find((entry) => entry.version === Number(version));
     if (!row) throw notFound(`Dashboard version ${version} not found`);
     return {
       id: row.id,
@@ -985,14 +980,14 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.post('/api/dashboards/:id/versions', async (request, reply) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
+    await readDashboard(deps, numericId);
     const parsed = CommitDashboardSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid commit', parsed.error.flatten());
 
-    assertBaseVersion(deps, numericId, parsed.data.baseVersion);
+    await assertBaseVersion(deps, numericId, parsed.data.baseVersion);
 
-    const snapshot = readDashboard(deps, numericId).snapshot;
-    const version = insertVersion(
+    const snapshot = (await readDashboard(deps, numericId)).snapshot;
+    const version = await insertVersion(
       deps,
       numericId,
       snapshot,
@@ -1007,18 +1002,17 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.post('/api/dashboards/:id/versions/:version/restore', async (request) => {
     const { id, version } = request.params as { id: string; version: string };
     const numericId = Number(id);
-    readDashboard(deps, numericId);
-    const row = deps.db
+    await readDashboard(deps, numericId);
+    const row = (await deps.db
       .select()
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, numericId))
-      .all()
-      .find((entry) => entry.version === Number(version));
+      .all()).find((entry) => entry.version === Number(version));
     if (!row) throw notFound(`Dashboard version ${version} not found`);
 
     const snapshot = JSON.parse(row.snapshotJson) as DashboardSnapshot;
-    applySnapshot(deps, numericId, snapshot);
-    const restored = insertVersion(
+    await applySnapshot(deps, numericId, snapshot);
+    const restored = await insertVersion(
       deps,
       numericId,
       snapshot,
@@ -1026,7 +1020,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       'restore',
       authorIdFrom(request),
     );
-    return { ...dashboardResponse(deps, numericId), version: restored };
+    return { ...await dashboardResponse(deps, numericId), version: restored };
   });
 }
 
@@ -1057,7 +1051,7 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
 
     const rowCount = await engine.countRows(tableName);
     const now = new Date().toISOString();
-    const inserted = deps.db
+    const inserted = await deps.db
       .insert(uploads)
       .values({
         tableName,
@@ -1081,7 +1075,7 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
   });
 
   app.get('/api/uploads', async () => {
-    const rows = deps.db.select().from(uploads).all();
+    const rows = await deps.db.select().from(uploads).all();
     return rows.map((row) => ({
       id: row.id,
       tableName: row.tableName,
@@ -1095,11 +1089,11 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
   app.delete('/api/uploads/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    const rows = deps.db.select().from(uploads).where(eq(uploads.id, numericId)).all();
+    const rows = await deps.db.select().from(uploads).where(eq(uploads.id, numericId)).all();
     if (rows.length === 0) throw notFound(`Upload ${id} not found`);
     const upload = rows[0];
     await deps.duckDb.dropTable(upload.tableName);
-    deps.db.delete(uploads).where(eq(uploads.id, numericId)).run();
+    await deps.db.delete(uploads).where(eq(uploads.id, numericId)).run();
     reply.code(204);
   });
 }

@@ -5,6 +5,7 @@ export interface SqlboardConfig {
   port: number;
   dataDir: string;
   dbPath: string;
+  databaseUrl: string;
   duckDbPath: string;
   uploadsDir: string;
   secretKey: string;
@@ -16,12 +17,17 @@ export interface SqlboardConfig {
 export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig {
   const dataDir = path.resolve(overrides?.dataDir ?? process.env.DATA_DIR ?? './data');
   const secretKey = overrides?.secretKey ?? process.env.SECRET_KEY ?? 'dev-secret-change-me';
+  // Default to a local SQLite file via libSQL. Same code path everywhere:
+  // local dev uses file:, prod uses libsql:// (or http://).
+  const defaultUrl = `file:${path.join(dataDir, 'sqlboard.db')}`;
+  const databaseUrl = overrides?.databaseUrl ?? process.env.DATABASE_URL ?? defaultUrl;
 
   return {
     host: overrides?.host ?? process.env.HOST ?? '0.0.0.0',
     port: Number(overrides?.port ?? process.env.PORT ?? 3001),
     dataDir,
     dbPath: path.join(dataDir, 'sqlboard.db'),
+    databaseUrl,
     duckDbPath: path.join(dataDir, 'sqlboard.duckdb'),
     uploadsDir: path.join(dataDir, 'uploads'),
     secretKey,

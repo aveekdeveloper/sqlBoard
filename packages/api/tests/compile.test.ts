@@ -21,15 +21,14 @@ beforeEach(async () => {
   dataDir = `./data-test-compile-${process.pid}-${Date.now()}`;
   ctx = await buildServer(loadConfig({ dataDir, secretKey: 'test' }));
   await ctx.app.ready();
-  ctx.db
+  await ctx.db
     .insert(users)
     .values({
       email: 'compile@test.dev',
       passwordHash: hashPassword('pw'),
       role: 'member',
       createdAt: new Date().toISOString(),
-    })
-    .run();
+    });
   const login = await ctx.app.inject({
     method: 'POST',
     url: '/api/auth/login',

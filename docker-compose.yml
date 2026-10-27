@@ -7,12 +7,15 @@ services:
       - "3001:3001"
     environment:
       - DATA_DIR=/data
+      - DATABASE_URL=${DATABASE_URL:-}
+      - LIBSQL_AUTH_TOKEN=${LIBSQL_AUTH_TOKEN:-}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - CACHE_TTL_MINUTES=${CACHE_TTL_MINUTES:-5}
       - MAX_CACHE_ROWS=${MAX_CACHE_ROWS:-10000}
       - QUERY_TIMEOUT_MS=${QUERY_TIMEOUT_MS:-30000}
       - HOST=0.0.0.0
       - PORT=3001
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
     volumes:
       - sqlboard-data:/data
     restart: unless-stopped

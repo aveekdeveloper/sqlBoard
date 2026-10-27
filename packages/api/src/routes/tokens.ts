@@ -23,12 +23,11 @@ function currentUser(request: FastifyRequest): AuthUser {
 export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb }): void {
   app.get('/api/tokens', async (request) => {
     const user = currentUser(request);
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(apiTokens)
       .where(eq(apiTokens.userId, user.id))
       .all();
-
     return rows
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .map((row) => ({
@@ -60,7 +59,7 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
         ? null
         : new Date(now.getTime() + parsed.data.expiresInDays * 24 * 60 * 60 * 1000).toISOString();
 
-    const inserted = deps.db
+    const inserted = await deps.db
       .insert(apiTokens)
       .values({
         userId: user.id,
@@ -90,7 +89,7 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
   app.delete('/api/tokens/:id', async (request, reply) => {
     const user = currentUser(request);
     const { id } = request.params as { id: string };
-    const rows = deps.db
+    const rows = await deps.db
       .select()
       .from(apiTokens)
       .where(eq(apiTokens.id, Number(id)))
@@ -102,11 +101,10 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
     }
 
     if (!token.revokedAt) {
-      deps.db
+      await deps.db
         .update(apiTokens)
         .set({ revokedAt: new Date().toISOString() })
-        .where(eq(apiTokens.id, token.id))
-        .run();
+        .where(eq(apiTokens.id, token.id));
     }
     reply.code(204);
   });

@@ -50,7 +50,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
       throw badRequest('email and password are required');
     }
 
-    const rows = db.select().from(users).where(eq(users.email, body.email)).all();
+    const rows = await db.select().from(users).where(eq(users.email, body.email)).all();
     const user = rows[0];
     if (!user || !verifyPassword(body.password, user.passwordHash)) {
       throw badRequest('invalid credentials');
@@ -59,9 +59,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
     const token = generateToken();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
-    db.insert(sessions)
-      .values({ token, userId: user.id, expiresAt, createdAt: now.toISOString() })
-      .run();
+    await db.insert(sessions).values({ token, userId: user.id, expiresAt, createdAt: now.toISOString() });
 
     reply.code(200);
     return {
@@ -74,7 +72,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
   app.post('/api/auth/logout', async (request, reply) => {
     const token = extractToken(request);
     if (token && !token.startsWith('sb_')) {
-      db.delete(sessions).where(eq(sessions.token, token)).run();
+      await db.delete(sessions).where(eq(sessions.token, token));
     }
     reply.code(204);
   });
@@ -93,21 +91,21 @@ export async function requireUser(
   if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'missing credentials');
   if (token.startsWith('sb_')) return resolveApiToken(db, token);
 
-  const rows = db.select().from(sessions).where(eq(sessions.token, token)).all();
+  const rows = await db.select().from(sessions).where(eq(sessions.token, token)).all();
   const session = rows[0];
   if (!session || new Date(session.expiresAt) < new Date()) {
     throw new ApiError(401, 'UNAUTHORIZED', 'session expired or invalid');
   }
 
-  const userRows = db.select().from(users).where(eq(users.id, session.userId)).all();
+  const userRows = await db.select().from(users).where(eq(users.id, session.userId)).all();
   const user = userRows[0];
   if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'user not found');
 
   return { id: user.id, email: user.email, role: toRole(user.role) };
 }
 
-function resolveApiToken(db: DrizzleDb, token: string): AuthUser {
-  const rows = db
+async function resolveApiToken(db: DrizzleDb, token: string): Promise<AuthUser> {
+  const rows = await db
     .select()
     .from(apiTokens)
     .where(eq(apiTokens.tokenHash, hashApiToken(token)))
@@ -120,17 +118,16 @@ function resolveApiToken(db: DrizzleDb, token: string): AuthUser {
     throw new ApiError(401, 'UNAUTHORIZED', 'API token expired');
   }
 
-  const userRows = db.select().from(users).where(eq(users.id, apiToken.userId)).all();
+  const userRows = await db.select().from(users).where(eq(users.id, apiToken.userId)).all();
   const user = userRows[0];
   if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'user not found');
 
   const now = Date.now();
   if (!apiToken.lastUsedAt || now - Date.parse(apiToken.lastUsedAt) > LAST_USED_THROTTLE_MS) {
     try {
-      db.update(apiTokens)
+      await db.update(apiTokens)
         .set({ lastUsedAt: new Date(now).toISOString() })
-        .where(eq(apiTokens.id, apiToken.id))
-        .run();
+        .where(eq(apiTokens.id, apiToken.id));
     } catch {
       // Usage tracking must never block a request.
     }

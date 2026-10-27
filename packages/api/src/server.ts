@@ -24,8 +24,8 @@ import './auth/types.js';
 
 export interface ServerContext {
   app: FastifyInstance;
-  db: ReturnType<typeof openDatabase>['db'];
-  sqlite: ReturnType<typeof openDatabase>['sqlite'];
+  db: Awaited<ReturnType<typeof openDatabase>>['db'];
+  client: Awaited<ReturnType<typeof openDatabase>>['client'];
   duckDb: DuckDbEngine;
   engineFactory: EngineFactory;
   cache: QueryCache;
@@ -45,7 +45,7 @@ const READ_ONLY_POSTS = [
 ];
 
 export async function buildServer(config: SqlboardConfig): Promise<ServerContext> {
-  const { sqlite, db } = openDatabase(config);
+  const { client, db } = await openDatabase(config);
   const duckDb = new DuckDbEngine(config.duckDbPath);
   const engineFactory = new EngineFactory({ config, db, duckDb });
   const cache = new QueryCache(config.cacheTtlMinutes * 60 * 1000);
@@ -141,15 +141,14 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
     const segments = path.split('/').filter(Boolean);
     try {
-      db.insert(auditLog)
+      await db.insert(auditLog)
         .values({
           userId: request.user?.id ?? null,
           action: `${request.method} ${path}`,
           resourceType: segments[1] ?? 'unknown',
           resourceId: segments[2] ?? null,
           createdAt: new Date().toISOString(),
-        })
-        .run();
+        });
     } catch {
       // Auditing must never fail a request that already succeeded.
     }
@@ -212,7 +211,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
     });
   }
 
-  return { app, db, sqlite, duckDb, engineFactory, cache, config };
+  return { app, db, client, duckDb, engineFactory, cache, config };
 }
 
 export async function startServer(config: SqlboardConfig): Promise<void> {

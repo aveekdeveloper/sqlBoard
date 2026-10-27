@@ -37,11 +37,11 @@ export class EngineFactory {
     const cached = this.engines.get(connectionId);
     if (cached) return cached;
 
-    const rows = this.deps.db
+    const rows = (await this.deps.db
       .select()
       .from(connections)
       .where(eq(connections.id, connectionId))
-      .all() as ConnectionRow[];
+      .all()) as ConnectionRow[];
 
     const row = rows[0];
     if (!row) throw notFound(`Connection ${connectionId} not found`);

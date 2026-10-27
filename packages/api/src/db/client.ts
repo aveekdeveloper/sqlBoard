@@ -1,10 +1,17 @@
 import fs from 'node:fs';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { createClient, type Client } from '@libsql/client';
+import { drizzle } from 'drizzle-orm/libsql';
 import { eq } from 'drizzle-orm';
 import { encryptJson } from '../crypto.js';
 import type { SqlboardConfig } from '../config.js';
 import { connections } from './schema.js';
+
+export type DrizzleDb = ReturnType<typeof drizzle>;
+
+export interface OpenedDatabase {
+  client: Client;
+  db: DrizzleDb;
+}
 
 const BOOTSTRAP_SQL = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -115,67 +122,51 @@ const BOOTSTRAP_SQL = [
   `CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_unique ON api_tokens (token_hash)`,
 ];
 
-export interface OpenedDatabase {
-  sqlite: Database.Database;
-  db: DrizzleDb;
-}
-
-export type DrizzleDb = ReturnType<typeof drizzle>;
-
-export function openDatabase(config: SqlboardConfig): OpenedDatabase {
+export async function openDatabase(config: SqlboardConfig): Promise<OpenedDatabase> {
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(config.uploadsDir, { recursive: true });
 
-  const sqlite = new Database(config.dbPath);
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
+  const client = createClient({
+    url: config.databaseUrl,
+    authToken: process.env.LIBSQL_AUTH_TOKEN,
+  });
 
-  for (const statement of BOOTSTRAP_SQL) sqlite.exec(statement);
-
-  const db = drizzle(sqlite);
-
-  try {
-    sqlite.exec('ALTER TABLE saved_queries ADD COLUMN latest_version INTEGER NOT NULL DEFAULT 0');
-  } catch {
-    // Column already exists.
-  }
-  try {
-    sqlite.exec('ALTER TABLE dashboard_items ADD COLUMN saved_query_id INTEGER');
-  } catch {
-    // Column already exists.
-  }
-  try {
-    sqlite.exec('ALTER TABLE dashboards ADD COLUMN filters_json TEXT');
-  } catch {
-    // Column already exists.
-  }
-  try {
-    sqlite.exec('ALTER TABLE dashboards ADD COLUMN theme TEXT');
-  } catch {
-    // Column already exists.
-  }
-  try {
-    sqlite.exec('ALTER TABLE dashboards ADD COLUMN colors_json TEXT');
-  } catch {
-    // Column already exists.
+  for (const statement of BOOTSTRAP_SQL) {
+    await client.execute(statement);
   }
 
-  const existing = db
+  const db = drizzle(client);
+
+  // Migrations (idempotent)
+  const migrations = [
+    'ALTER TABLE saved_queries ADD COLUMN latest_version INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE dashboard_items ADD COLUMN saved_query_id INTEGER',
+    'ALTER TABLE dashboards ADD COLUMN filters_json TEXT',
+    'ALTER TABLE dashboards ADD COLUMN theme TEXT',
+    'ALTER TABLE dashboards ADD COLUMN colors_json TEXT',
+  ];
+  for (const m of migrations) {
+    try {
+      await client.execute(m);
+    } catch {
+      // Column already exists.
+    }
+  }
+
+  // Seed built-in DuckDB connection if none exists
+  const existing = await db
     .select({ id: connections.id })
     .from(connections)
     .where(eq(connections.type, 'duckdb'))
     .all();
-
   if (existing.length === 0) {
-    db.insert(connections)
-      .values({
-        name: 'Local uploads',
-        type: 'duckdb',
-        configEnc: encryptJson({ builtIn: true }, config.secretKey),
-        createdAt: new Date().toISOString(),
-      })
-      .run();
+    await db.insert(connections).values({
+      name: 'Local uploads',
+      type: 'duckdb',
+      configEnc: encryptJson({ builtIn: true }, config.secretKey),
+      createdAt: new Date().toISOString(),
+    });
   }
 
-  return { sqlite, db };
+  return { client, db };
 }

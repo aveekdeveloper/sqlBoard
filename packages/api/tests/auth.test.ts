@@ -14,16 +14,15 @@ async function boot(dataDir: string): Promise<ServerContext> {
   return ctx;
 }
 
-function seedUser(ctx: ServerContext, email: string, role: 'admin' | 'member' | 'viewer') {
-  ctx.db
+async function seedUser(ctx: ServerContext, email: string, role: 'admin' | 'member' | 'viewer') {
+  await ctx.db
     .insert(users)
     .values({
       email,
       passwordHash: hashPassword(PASSWORD),
       role,
       createdAt: new Date().toISOString(),
-    })
-    .run();
+    });
 }
 
 async function login(ctx: ServerContext, email: string): Promise<string> {
@@ -72,7 +71,7 @@ describe('auth and api tokens', () => {
   });
 
   it('accepts a session token and records the author on writes', async () => {
-    seedUser(ctx, 'admin@test.dev', 'admin');
+    await seedUser(ctx, 'admin@test.dev', 'admin');
     const token = await login(ctx, 'admin@test.dev');
 
     const created = await ctx.app.inject({
@@ -104,7 +103,7 @@ describe('auth and api tokens', () => {
   });
 
   it('mints a scoped token, enforces its role, and revokes it', async () => {
-    seedUser(ctx, 'admin@test.dev', 'admin');
+    await seedUser(ctx, 'admin@test.dev', 'admin');
     const session = await login(ctx, 'admin@test.dev');
 
     const created = await ctx.app.inject({
@@ -148,7 +147,7 @@ describe('auth and api tokens', () => {
   });
 
   it('tolerates an empty JSON body on bodyless DELETE requests', async () => {
-    seedUser(ctx, 'admin@test.dev', 'admin');
+    await seedUser(ctx, 'admin@test.dev', 'admin');
     const session = await login(ctx, 'admin@test.dev');
 
     const created = await ctx.app.inject({
@@ -176,7 +175,7 @@ describe('auth and api tokens', () => {
   });
 
   it('still rejects malformed JSON', async () => {
-    seedUser(ctx, 'admin@test.dev', 'admin');
+    await seedUser(ctx, 'admin@test.dev', 'admin');
     const session = await login(ctx, 'admin@test.dev');
 
     const res = await ctx.app.inject({
@@ -189,7 +188,7 @@ describe('auth and api tokens', () => {
   });
 
   it('viewer can run queries and compile but cannot write', async () => {
-    seedUser(ctx, 'viewer@test.dev', 'viewer');
+    await seedUser(ctx, 'viewer@test.dev', 'viewer');
     const session = await login(ctx, 'viewer@test.dev');
 
     const read = await ctx.app.inject({
@@ -217,7 +216,7 @@ describe('auth and api tokens', () => {
   });
 
   it('does not let a token outrank its owner', async () => {
-    seedUser(ctx, 'viewer@test.dev', 'viewer');
+    await seedUser(ctx, 'viewer@test.dev', 'viewer');
     const session = await login(ctx, 'viewer@test.dev');
 
     const escalated = await ctx.app.inject({

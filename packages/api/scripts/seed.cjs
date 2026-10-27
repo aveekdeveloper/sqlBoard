@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3');
+const { createClient } = require('@libsql/client');
 const { scryptSync, randomBytes } = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -8,128 +8,42 @@ fs.mkdirSync(dataDir, { recursive: true });
 const uploadsDir = path.join(dataDir, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-// --- SQLite metadata ---
-const db = new Database(path.join(dataDir, 'sqlboard.db'));
-db.pragma('journal_mode = WAL');
-db.exec(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'member',
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT NOT NULL UNIQUE,
-    user_id INTEGER NOT NULL,
-    expires_at TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS connections (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,
-    config_enc TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS uploads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_name TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    row_count INTEGER NOT NULL DEFAULT 0,
-    size_bytes INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS saved_queries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    connection_id INTEGER NOT NULL,
-    sql TEXT NOT NULL,
-    latest_version INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS saved_query_versions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    saved_query_id INTEGER NOT NULL,
-    version INTEGER NOT NULL,
-    parent_version INTEGER,
-    message TEXT,
-    author_id INTEGER,
-    kind TEXT NOT NULL DEFAULT 'manual',
-    sql TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS saved_query_versions_unique ON saved_query_versions (saved_query_id, version)`);
-db.exec(`CREATE TABLE IF NOT EXISTS dashboards (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    filters_json TEXT,
-    theme TEXT,
-    colors_json TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS dashboard_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    dashboard_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    sql TEXT NOT NULL,
-    connection_id INTEGER NOT NULL,
-    saved_query_id INTEGER,
-    block_type TEXT NOT NULL DEFAULT 'chart',
-    config_json TEXT,
-    layout_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS dashboard_versions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    dashboard_id INTEGER NOT NULL,
-    version INTEGER NOT NULL,
-    parent_version INTEGER,
-    message TEXT,
-    author_id INTEGER,
-    kind TEXT NOT NULL DEFAULT 'manual',
-    snapshot_json TEXT NOT NULL,
-    code_text TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS dashboard_versions_unique ON dashboard_versions (dashboard_id, version)`);
-db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    action TEXT NOT NULL,
-    resource_type TEXT NOT NULL,
-    resource_id TEXT,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE TABLE IF NOT EXISTS api_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    token_hash TEXT NOT NULL,
-    prefix TEXT NOT NULL,
-    scope TEXT NOT NULL DEFAULT 'viewer',
-    expires_at TEXT,
-    last_used_at TEXT,
-    revoked_at TEXT,
-    created_at TEXT NOT NULL
-  )`);
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_unique ON api_tokens (token_hash)`);
+const databaseUrl = process.env.DATABASE_URL || `file:${path.join(dataDir, 'sqlboard.db')}`;
+const client = createClient({ url: databaseUrl, authToken: process.env.LIBSQL_AUTH_TOKEN });
+
+async function exec(sql) {
+  await client.execute(sql);
+}
+
+async function run(sql, ...params) {
+  return client.execute({ sql, args: params });
+}
+
+// --- SQLite/libSQL metadata ---
+await exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member', created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS connections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, config_enc TEXT NOT NULL, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS uploads (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT NOT NULL, filename TEXT NOT NULL, row_count INTEGER NOT NULL DEFAULT 0, size_bytes INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS saved_queries (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, connection_id INTEGER NOT NULL, sql TEXT NOT NULL, latest_version INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS saved_query_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, saved_query_id INTEGER NOT NULL, version INTEGER NOT NULL, parent_version INTEGER, message TEXT, author_id INTEGER, kind TEXT NOT NULL DEFAULT 'manual', sql TEXT NOT NULL, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS dashboards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT, filters_json TEXT, theme TEXT, colors_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS dashboard_items (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, title TEXT NOT NULL, sql TEXT NOT NULL, connection_id INTEGER NOT NULL, saved_query_id INTEGER, block_type TEXT NOT NULL DEFAULT 'chart', config_json TEXT, layout_json TEXT NOT NULL, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS dashboard_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, version INTEGER NOT NULL, parent_version INTEGER, message TEXT, author_id INTEGER, kind TEXT NOT NULL DEFAULT 'manual', snapshot_json TEXT NOT NULL, code_text TEXT NOT NULL, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT, created_at TEXT NOT NULL)`);
+await exec(`CREATE TABLE IF NOT EXISTS api_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL, prefix TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'viewer', expires_at TEXT, last_used_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL)`);
 
 // Seed admin user
 const salt = randomBytes(16).toString('hex');
 const hash = scryptSync('admin', salt, 64).toString('hex');
 const now = new Date().toISOString();
-db.prepare('INSERT OR REPLACE INTO users (email, password_hash, role, created_at) VALUES (?, ?, ?, ?)').run('admin@example.com', salt + ':' + hash, 'admin', now);
+await run(`INSERT OR REPLACE INTO users (email, password_hash, role, created_at) VALUES (?, ?, ?, ?)`, 'admin@example.com', salt + ':' + hash, 'admin', now);
 console.log('Admin user: admin@example.com / admin');
 
 // Seed DuckDB connection
-const existingConn = db.prepare("SELECT id FROM connections WHERE type = 'duckdb'").get();
+const existingConn = await client.execute({ sql: "SELECT id FROM connections WHERE type = 'duckdb'" });
 let connId;
-if (existingConn) {
-  connId = existingConn.id;
+if (existingConn.rows.length > 0) {
+  connId = existingConn.rows[0].id;
 } else {
   const crypto = require('crypto');
   const key = crypto.scryptSync(process.env.SECRET_KEY || 'dev-secret-change-me', 'sqlboard-salt', 32);
@@ -139,8 +53,8 @@ if (existingConn) {
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
   const configEnc = Buffer.concat([iv, tag, encrypted]).toString('base64');
-  const result = db.prepare('INSERT INTO connections (name, type, config_enc, created_at) VALUES (?, ?, ?, ?)').run('Sample Data (DuckDB)', 'duckdb', configEnc, now);
-  connId = result.lastInsertRowid;
+  const result = await run(`INSERT INTO connections (name, type, config_enc, created_at) VALUES (?, ?, ?, ?)`, 'Sample Data (DuckDB)', 'duckdb', configEnc, now);
+  connId = Number(result.lastInsertRowid);
 }
 console.log('DuckDB connection id:', connId);
 
@@ -234,7 +148,6 @@ async function seedTable(filename, tableName) {
   await seedTable('users.csv', 'users');
   await seedTable('products.csv', 'products');
 
-  // Seed saved queries
   const q1 = `-- @viz: bar
 -- @x: month
 -- @y: revenue
@@ -257,23 +170,22 @@ SELECT category, SUM(sales) AS sales FROM products GROUP BY category;`;
 -- @groupby: category
 SELECT subcategory, category, SUM(sales) AS sales FROM products GROUP BY subcategory, category ORDER BY sales DESC;`;
 
-  const existingQueries = db.prepare('SELECT COUNT(*) AS c FROM saved_queries').get();
-  if (existingQueries.c === 0) {
+  const existingQueries = await client.execute({ sql: 'SELECT COUNT(*) AS c FROM saved_queries' });
+  if (Number(existingQueries.rows[0].c) === 0) {
     const now2 = new Date().toISOString();
-    db.prepare('INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('Monthly Revenue by Region', connId, q1, now2, now2);
-    db.prepare('INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('User Growth by Region', connId, q2, now2, now2);
-    db.prepare('INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('Sales by Category', connId, q3, now2, now2);
-    db.prepare('INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('Sales by Subcategory', connId, q4, now2, now2);
+    await run(`INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, 'Monthly Revenue by Region', connId, q1, now2, now2);
+    await run(`INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, 'User Growth by Region', connId, q2, now2, now2);
+    await run(`INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, 'Sales by Category', connId, q3, now2, now2);
+    await run(`INSERT INTO saved_queries (name, connection_id, sql, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, 'Sales by Subcategory', connId, q4, now2, now2);
     console.log('Saved 4 sample queries.');
   }
 
-  // Seed a sample dashboard
-  const existingDashboards = db.prepare('SELECT COUNT(*) AS c FROM dashboards').get();
-  if (existingDashboards.c === 0) {
+  const existingDashboards = await client.execute({ sql: 'SELECT COUNT(*) AS c FROM dashboards' });
+  if (Number(existingDashboards.rows[0].c) === 0) {
     const now3 = new Date().toISOString();
     const filters = [{ name: 'Region', type: 'select', connectionId: connId, sql: 'SELECT DISTINCT region FROM sales ORDER BY region', defaultValue: 'NA' }, { name: 'Category', type: 'select', connectionId: connId, sql: 'SELECT DISTINCT category FROM products ORDER BY category', defaultValue: null }];
-     const dashResult = db.prepare('INSERT INTO dashboards (name, description, filters_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('Sample Sales Dashboard', 'Revenue, users, and product sales overview', JSON.stringify(filters), now3, now3);
-    const dashId = dashResult.lastInsertRowid;
+    const dashResult = await run(`INSERT INTO dashboards (name, description, filters_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, 'Sample Sales Dashboard', 'Revenue, users, and product sales overview', JSON.stringify(filters), now3, now3);
+    const dashId = Number(dashResult.lastInsertRowid);
 
     const items = [
       { title: 'Monthly Revenue by Region', sql: q1, layout: { x: 0, y: 0, w: 6, h: 4 } },
@@ -282,7 +194,7 @@ SELECT subcategory, category, SUM(sales) AS sales FROM products GROUP BY subcate
       { title: 'Sales by Subcategory', sql: q4, layout: { x: 4, y: 4, w: 8, h: 4 } },
     ];
     for (const item of items) {
-      db.prepare('INSERT INTO dashboard_items (dashboard_id, title, sql, connection_id, block_type, layout_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(dashId, item.title, item.sql, connId, 'chart', JSON.stringify(item.layout), now3);
+      await run(`INSERT INTO dashboard_items (dashboard_id, title, sql, connection_id, block_type, layout_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, dashId, item.title, item.sql, connId, 'chart', JSON.stringify(item.layout), now3);
     }
     console.log('Created sample dashboard with 4 charts.');
   }
