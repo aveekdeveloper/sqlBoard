@@ -262,7 +262,7 @@ export function serializeDashboardManifest(
       lines.push(`-- @presentation: ${filter.presentation}`);
     }
     if (filter.connectionId && connection) {
-      lines.push(`-- @connection: ${oneLine(connection)}`);
+      lines.push(`-- @connection: ${filter.connectionId}`);
     }
     if (filter.sql) lines.push(`-- @sql: ${oneLine(filter.sql)}`);
     if (filter.values?.length) lines.push(`-- @values: ${filter.values.map(oneLine).join(', ')}`);
@@ -275,7 +275,6 @@ export function serializeDashboardManifest(
   }
 
   for (const item of dashboard.items) {
-    const connection = byId.get(item.connectionId) ?? `connection-${item.connectionId}`;
     lines.push('');
     lines.push(`-- @block: ${oneLine(item.title) || 'Untitled block'}`);
     lines.push(`-- @type: ${item.blockType}`);
@@ -283,7 +282,7 @@ export function serializeDashboardManifest(
       `-- @layout: ${item.layout.x},${item.layout.y},${item.layout.w},${item.layout.h}`,
     );
     if (item.blockType !== 'text') {
-      lines.push(`-- @connection: ${oneLine(connection)}`);
+      lines.push(`-- @connection: ${item.connectionId}`);
       const savedQuery = savedQueries.find((query) => query.id === item.savedQueryId);
       if (savedQuery) lines.push(`-- @saved-query: ${oneLine(savedQuery.name)}`);
     }
@@ -336,6 +335,10 @@ export function parseDashboardManifest(
     const key = connection.name.trim().toLowerCase();
     if (!byName.has(key)) byName.set(key, connection);
   }
+  const byId = new Map<number, ManifestConnection>();
+  for (const connection of connections) {
+    if (!byId.has(connection.id)) byId.set(connection.id, connection);
+  }
   const savedByName = new Map<string, ManifestSavedQuery>();
   for (const savedQuery of savedQueries) {
     const key = savedQuery.name.trim().toLowerCase();
@@ -357,12 +360,21 @@ export function parseDashboardManifest(
     const type = (annotations.type?.trim().toLowerCase() as ManifestFilter['type']) || 'select';
     const presentation = (annotations.presentation?.trim().toLowerCase() as ManifestFilter['presentation']) || type;
     const connectionName = annotations.connection?.trim() ?? '';
-    const connection = connectionName ? byName.get(connectionName.toLowerCase()) : undefined;
-    if (connectionName && !connection) {
+    const connectionIdAnnotation = annotations['connection-id']?.trim() ?? annotations.connectionid?.trim() ?? '';
+    let connection: ManifestConnection | undefined;
+    if (connectionIdAnnotation) {
+      const numeric = Number(connectionIdAnnotation);
+      if (Number.isFinite(numeric)) connection = byId.get(numeric);
+      else connection = byName.get(connectionIdAnnotation.toLowerCase());
+    } else if (connectionName) {
+      if (/^\d+$/.test(connectionName)) connection = byId.get(Number(connectionName));
+      else connection = byName.get(connectionName.toLowerCase());
+    }
+    if ((connectionName || connectionIdAnnotation) && !connection) {
       diagnostics.push({
         severity: 'error',
         code: 'UNKNOWN_CONNECTION',
-        message: `Connection '${connectionName}' was not found (filter '${name}').`,
+        message: `Connection '${connectionName || connectionIdAnnotation}' was not found (filter '${name}').`,
         block: name,
       });
     }
@@ -498,34 +510,39 @@ export function parseDashboardManifest(
     }
 
     const connectionName = annotations.connection?.trim() ?? '';
+    const connectionIdAnnotation = (annotations['connection-id'] ?? annotations.connectionid)?.trim() ?? '';
     let connectionId = 0;
     let savedQueryId: number | undefined = savedQuery?.id;
     if (type !== 'text') {
-      if (!connectionName) {
+      let resolved: ManifestConnection | undefined;
+      const lookupKey = connectionIdAnnotation || connectionName;
+      if (lookupKey) {
+        if (/^\d+$/.test(lookupKey)) resolved = byId.get(Number(lookupKey));
+        else resolved = byName.get(lookupKey.toLowerCase());
+      }
+      if (lookupKey && !resolved) {
+        diagnostics.push({
+          severity: 'error',
+          code: 'UNKNOWN_CONNECTION',
+          message: `Connection '${lookupKey}' was not found (block '${title}').`,
+          block: title,
+        });
+      } else if (resolved) {
+        connectionId = resolved.id;
+      }
+      if (!lookupKey) {
         diagnostics.push({
           severity: 'error',
           code: 'MISSING_CONNECTION',
-          message: `Block '${title}' needs @connection with a connection name.`,
+          message: `Block '${title}' needs @connection with a connection name or id.`,
           block: title,
         });
-      } else {
-        const connection = byName.get(connectionName.toLowerCase());
-        if (connection) {
-          connectionId = connection.id;
-        } else {
-          diagnostics.push({
-            severity: 'error',
-            code: 'UNKNOWN_CONNECTION',
-            message: `Connection '${connectionName}' was not found (block '${title}').`,
-            block: title,
-          });
-        }
       }
       if (savedQueryName) {
         const resolved = savedByName.get(savedQueryName.toLowerCase());
         if (resolved) {
           savedQueryId = resolved.id;
-          if (!connectionName) connectionId = resolved.connectionId;
+          if (!lookupKey) connectionId = resolved.connectionId;
         } else {
           diagnostics.push({
             severity: 'error',
