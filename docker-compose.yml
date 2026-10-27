@@ -1,6 +1,5 @@
 # Multi-tenant compose (simplified for Dokploy).
 # Usage: docker compose -f docker-compose.yml up -d
-# Garage S3 is NOT included — add it as a separate Dokploy app when S3 storage code is ready.
 services:
   sqld:
     image: ghcr.io/tursodatabase/libsql-server:latest
@@ -22,7 +21,7 @@ services:
       - "3001:3001"
     environment:
       - DATA_DIR=/data
-      - DATABASE_URL=libsql://sqld:8080
+      - DATABASE_URL=http://sqld:8080
       - LIBSQL_AUTH_TOKEN=${LIBSQL_AUTH_TOKEN:-}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - TENANCY_ENABLED=${TENANCY_ENABLED:-true}
