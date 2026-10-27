@@ -33,14 +33,24 @@ async function run(sql, ...params) {
   await exec(`CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT, created_at TEXT NOT NULL)`);
   await exec(`CREATE TABLE IF NOT EXISTS api_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL, prefix TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'viewer', expires_at TEXT, last_used_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL)`);
 
-  // Seed admin user
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync('admin', salt, 64).toString('hex');
-  const now = new Date().toISOString();
-  await run(`INSERT OR REPLACE INTO users (email, password_hash, role, created_at) VALUES (?, ?, ?, ?)`, 'admin@example.com', salt + ':' + hash, 'admin', now);
-  console.log('Admin user: admin@example.com / admin');
+  // Check if DB already has data (skip seeding entirely if so)
+  const existingUsers = await client.execute({ sql: 'SELECT COUNT(*) AS c FROM users' });
+  const alreadySeeded = Number(existingUsers.rows[0].c) > 0;
 
-  // Seed DuckDB connection
+  if (!alreadySeeded) {
+    // Seed admin user
+    const salt = randomBytes(16).toString('hex');
+    const hash = scryptSync('admin', salt, 64).toString('hex');
+    const now = new Date().toISOString();
+    await run(`INSERT INTO users (email, password_hash, role, created_at) VALUES (?, ?, ?, ?)`, 'admin@example.com', salt + ':' + hash, 'admin', now);
+    console.log('Admin user: admin@example.com / admin');
+  } else {
+    console.log('Users already exist, skipping admin seed.');
+  }
+
+  const now = new Date().toISOString();
+
+  // Seed DuckDB connection (only if no duckdb connection exists)
   const existingConn = await client.execute({ sql: "SELECT id FROM connections WHERE type = 'duckdb'" });
   let connId;
   if (existingConn.rows.length > 0) {
