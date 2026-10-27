@@ -32,12 +32,14 @@
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.2",
+    "@databricks/sql": "^2.4.0",
     "diff": "^9.0.0",
     "lucide-react": "^1.61.0",
     "react-grid-layout": "^1.5.4",
     "react-markdown": "^9.0.1",
     "react-resizable-panels": "^2.1.7",
     "rehype-sanitize": "^6.0.0",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "snowflake-sdk": "^3.4.1"
   }
 }

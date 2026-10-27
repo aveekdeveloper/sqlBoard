@@ -10,6 +10,8 @@ import { SqliteFileEngine } from './sqlite-file.js';
 import { MySqlEngine, type MySqlConfig } from './mysql.js';
 import { ClickHouseEngine, type ClickHouseConfig } from './clickhouse.js';
 import { TrinoEngine, type TrinoConfig } from './trino.js';
+import { DatabricksEngine, type DatabricksConfig } from './databricks.js';
+import { SnowflakeEngine, type SnowflakeConfig } from './snowflake.js';
 import type { QueryEngine } from './query-engine.js';
 
 export interface EngineFactoryDeps {
@@ -109,8 +111,25 @@ export class EngineFactory {
       return new TrinoEngine(trinoConfig);
     }
 
-    if (type === 'databricks' || type === 'snowflake') {
-      throw new ApiError(501, 'NOT_IMPLEMENTED', `${type} connectors arrive in v0.1 pass 5`);
+    if (type === 'databricks') {
+      const dbConfig: DatabricksConfig = {
+        host: String(config.host ?? ''),
+        httpPath: String(config.httpPath ?? ''),
+        token: String(config.token ?? ''),
+      };
+      return new DatabricksEngine(dbConfig);
+    }
+
+    if (type === 'snowflake') {
+      const sfConfig: SnowflakeConfig = {
+        account: String(config.account ?? ''),
+        user: String(config.user ?? ''),
+        password: String(config.password ?? ''),
+        warehouse: config.warehouse ? String(config.warehouse) : undefined,
+        database: config.database ? String(config.database) : undefined,
+        schema: config.schema ? String(config.schema) : undefined,
+      };
+      return new SnowflakeEngine(sfConfig);
     }
 
     throw new ApiError(400, 'CONNECTION_FAILED', `Unknown connection type: ${type}`);
@@ -126,6 +145,12 @@ export class EngineFactory {
       await engine.close().catch(() => undefined);
     }
     if (engine instanceof ClickHouseEngine) {
+      await engine.close().catch(() => undefined);
+    }
+    if (engine instanceof DatabricksEngine) {
+      await engine.close().catch(() => undefined);
+    }
+    if (engine instanceof SnowflakeEngine) {
       await engine.close().catch(() => undefined);
     }
   }
