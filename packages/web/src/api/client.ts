@@ -39,6 +39,21 @@ export function setToken(token: string | null) {
   else localStorage.removeItem('sqlboard_token');
 }
 
+export function getTenant(): string | null {
+  try {
+    const raw = localStorage.getItem('sqlboard_tenant');
+    if (!raw) return null;
+    return JSON.parse(raw)?.slug ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function setTenant(tenant: any) {
+  if (tenant) localStorage.setItem('sqlboard_tenant', JSON.stringify(tenant));
+  else localStorage.removeItem('sqlboard_tenant');
+}
+
 export interface SessionUser {
   id: number;
   email: string;
@@ -92,9 +107,11 @@ function clearSession(): void {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const tenant = getTenant();
   const headers: Record<string, string> = {};
   if (init?.body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (tenant) headers['X-Tenant'] = tenant;
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
   if (!res.ok) {

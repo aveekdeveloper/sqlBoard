@@ -27,6 +27,7 @@ import {
   type ManifestDashboard,
 } from '@sqlboard/shared';
 import { QueryCache } from '../cache/query-cache.js';
+import { currentTenant } from '../core/tenancy.js';
 
 interface RouteDeps {
   db: DrizzleDb;
@@ -55,11 +56,10 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const parsed = CreateConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid connection payload', parsed.error.flatten());
 
-    const existing = (await deps.db.select().from(connections).all()).find((c) => c.name === parsed.data.name);
+    const existing = (await deps.db.select().from(connections).where(eq(connections.tenantId, currentTenant().id)).all()).find((c) => c.name === parsed.data.name);
     if (existing) throw new ApiError(409, 'CONFLICT', `A connection named "${parsed.data.name}" already exists`);
 
     const { encryptJson } = await import('../crypto.js');
-    const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
     const configEnc = encryptJson(parsed.data, deps.secretKey);
     const now = new Date().toISOString();
@@ -106,7 +106,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const newName = parsed.data.name ?? existing.name;
     // Check name uniqueness if name changed
     if (newName !== existing.name) {
-      const dup = (await deps.db.select().from(connections).all()).find((c) => c.name === newName && c.id !== numericId);
+      const dup = (await deps.db.select().from(connections).where(eq(connections.tenantId, currentTenant().id)).all()).find((c) => c.name === newName && c.id !== numericId);
       if (dup) throw new ApiError(409, 'CONFLICT', `A connection named "${newName}" already exists`);
     }
 
@@ -763,7 +763,12 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
 
   app.get('/api/dashboards/:id', async (request) => {
     const { id } = request.params as { id: string };
-    return await dashboardResponse(deps, Number(id));
+    const numericId = Number(id);
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.id, numericId)).all();
+    if (rows.length === 0 || rows[0].tenantId !== tenant.id) throw notFound(`Dashboard ${id} not found`);
+    return await dashboardResponse(deps, numericId);
   });
 
   app.post('/api/dashboards/:id/items', async (request, reply) => {

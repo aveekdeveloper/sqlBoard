@@ -6,7 +6,7 @@ import Dashboards from './pages/Dashboards.js';
 import DashboardDetail from './pages/DashboardDetail.js';
 import SavedQueries from './pages/SavedQueries.js';
 import Settings from './pages/Settings.js';
-import { setStoredUser } from './api/client.js';
+import { setStoredUser, setTenant } from './api/client.js';
 import { useAuth } from './auth.js';
 
 function getToken(): string | null {
@@ -31,6 +31,7 @@ const NAV_ITEMS = [
 function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [tenant, setTenant] = useState('');
   const [error, setError] = useState('');
   const expired = new URLSearchParams(window.location.search).get('expired') === '1';
 
@@ -40,7 +41,7 @@ function Login() {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, tenant: tenant.trim() || undefined }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -50,6 +51,7 @@ function Login() {
     const data = await res.json();
     setToken(data.token);
     setStoredUser(data.user);
+    if (data.tenant) setTenant(data.tenant);
     window.location.href = '/connections';
   }
 
@@ -64,6 +66,17 @@ function Login() {
           </p>
         )}
         <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tenant (optional)</label>
+            <input
+              value={tenant}
+              onChange={(e) => setTenant(e.target.value)}
+              type="text"
+              placeholder="default"
+              autoComplete="organization"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-base"
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -106,6 +119,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   function signOut() {
     setToken(null);
     setStoredUser(null);
+    setTenant(null);
     window.location.href = '/login';
   }
 
