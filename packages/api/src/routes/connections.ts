@@ -52,6 +52,9 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const parsed = CreateConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid connection payload', parsed.error.flatten());
 
+    const existing = deps.db.select().from(connections).all().find((c) => c.name === parsed.data.name);
+    if (existing) throw new ApiError(409, 'CONFLICT', `A connection named "${parsed.data.name}" already exists`);
+
     const { encryptJson } = await import('../crypto.js');
     const configEnc = encryptJson(parsed.data, deps.secretKey);
     const now = new Date().toISOString();
@@ -101,6 +104,26 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     deps.cache.clear();
     deps.db.delete(connections).where(eq(connections.id, numericId)).run();
     reply.code(204);
+  });
+
+  app.post('/api/connections/validate', async (request) => {
+    const parsed = CreateConnectionRequestSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid connection payload', parsed.error.flatten());
+
+    const { encryptJson } = await import('../crypto.js');
+    const configEnc = encryptJson(parsed.data, deps.secretKey);
+    const engine = await deps.engineFactory.build(parsed.data.type, configEnc);
+    try {
+      const tables = await engine.listTables();
+      return { ok: true, tableCount: tables.length, tables: tables.slice(0, 50) };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    } finally {
+      const closeable = engine as unknown as { close?: () => Promise<void> };
+      if (typeof closeable.close === 'function') {
+        await closeable.close().catch(() => undefined);
+      }
+    }
   });
 
   app.post('/api/connections/:id/test', async (request) => {

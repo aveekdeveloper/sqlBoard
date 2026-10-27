@@ -7,6 +7,9 @@ import { connections } from '../db/schema.js';
 import { DuckDbEngine } from './duckdb.js';
 import { PostgresEngine, type PostgresConfig } from './postgres.js';
 import { SqliteFileEngine } from './sqlite-file.js';
+import { MySqlEngine, type MySqlConfig } from './mysql.js';
+import { ClickHouseEngine, type ClickHouseConfig } from './clickhouse.js';
+import { TrinoEngine, type TrinoConfig } from './trino.js';
 import type { QueryEngine } from './query-engine.js';
 
 export interface EngineFactoryDeps {
@@ -69,6 +72,43 @@ export class EngineFactory {
       return new PostgresEngine(pgConfig, this.deps.config.queryTimeoutMs);
     }
 
+    if (type === 'mysql') {
+      const mysqlConfig: MySqlConfig = {
+        host: String(config.host ?? ''),
+        port: Number(config.port ?? 3306),
+        database: String(config.database ?? ''),
+        user: String(config.user ?? ''),
+        password: String(config.password ?? ''),
+        ssl: Boolean(config.ssl),
+      };
+      return new MySqlEngine(mysqlConfig);
+    }
+
+    if (type === 'clickhouse') {
+      const chConfig: ClickHouseConfig = {
+        host: String(config.host ?? ''),
+        port: Number(config.port ?? 8123),
+        database: String(config.database ?? 'default'),
+        user: String(config.user ?? 'default'),
+        password: String(config.password ?? ''),
+        ssl: Boolean(config.ssl),
+      };
+      return new ClickHouseEngine(chConfig);
+    }
+
+    if (type === 'trino') {
+      const trinoConfig: TrinoConfig = {
+        host: String(config.host ?? ''),
+        port: Number(config.port ?? 8080),
+        catalog: String(config.catalog ?? 'hive'),
+        schema: String(config.schema ?? 'default'),
+        user: String(config.user ?? ''),
+        password: String(config.password ?? ''),
+        ssl: Boolean(config.ssl),
+      };
+      return new TrinoEngine(trinoConfig);
+    }
+
     if (type === 'databricks' || type === 'snowflake') {
       throw new ApiError(501, 'NOT_IMPLEMENTED', `${type} connectors arrive in v0.1 pass 5`);
     }
@@ -80,6 +120,12 @@ export class EngineFactory {
     const engine = this.engines.get(connectionId);
     this.engines.delete(connectionId);
     if (engine instanceof PostgresEngine) {
+      await engine.close().catch(() => undefined);
+    }
+    if (engine instanceof MySqlEngine) {
+      await engine.close().catch(() => undefined);
+    }
+    if (engine instanceof ClickHouseEngine) {
       await engine.close().catch(() => undefined);
     }
   }

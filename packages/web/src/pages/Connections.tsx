@@ -6,6 +6,9 @@ const CONNECTION_TYPES = [
   { value: 'duckdb', label: 'File upload (CSV/Parquet/JSON)', fields: [] },
   { value: 'sqlite', label: 'SQLite file', fields: ['path'] },
   { value: 'postgres', label: 'PostgreSQL', fields: ['host', 'port', 'database', 'user', 'password'] },
+  { value: 'mysql', label: 'MySQL', fields: ['host', 'port', 'database', 'user', 'password'] },
+  { value: 'clickhouse', label: 'ClickHouse', fields: ['host', 'port', 'database', 'user', 'password'] },
+  { value: 'trino', label: 'Trino', fields: ['host', 'port', 'catalog', 'schema', 'user', 'password'] },
   { value: 'databricks', label: 'Databricks', fields: ['host', 'httpPath', 'token'] },
   { value: 'snowflake', label: 'Snowflake', fields: ['account', 'user', 'password', 'warehouse', 'database', 'schema'] },
 ];
@@ -40,6 +43,22 @@ export default function Connections() {
       if (type === 'postgres') {
         body.host = form.host; body.port = Number(form.port || 5432);
         body.database = form.database; body.user = form.user; body.password = form.password;
+        body.ssl = form.ssl === 'true';
+      }
+      if (type === 'mysql') {
+        body.host = form.host; body.port = Number(form.port || 3306);
+        body.database = form.database; body.user = form.user; body.password = form.password;
+        body.ssl = form.ssl === 'true';
+      }
+      if (type === 'clickhouse') {
+        body.host = form.host; body.port = Number(form.port || 8123);
+        body.database = form.database || 'default'; body.user = form.user || 'default'; body.password = form.password || '';
+        body.ssl = form.ssl === 'true';
+      }
+      if (type === 'trino') {
+        body.host = form.host; body.port = Number(form.port || 8080);
+        body.catalog = form.catalog || 'hive'; body.schema = form.schema || 'default';
+        body.user = form.user; body.password = form.password || '';
         body.ssl = form.ssl === 'true';
       }
       if (type === 'databricks') {
@@ -162,19 +181,19 @@ export default function Connections() {
           {selectedType.fields.includes('port') && (
             <div>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Port</label>
-              <input value={form.port || '5432'} onChange={(e) => setForm({ ...form, port: e.target.value })} type="number" className={inputClass} />
+              <input value={form.port || (type === 'mysql' ? '3306' : type === 'clickhouse' ? '8123' : type === 'trino' ? '8080' : type === 'postgres' ? '5432' : '')} onChange={(e) => setForm({ ...form, port: e.target.value })} type="number" className={inputClass} />
             </div>
           )}
           {selectedType.fields.includes('database') && (
             <div>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Database</label>
-              <input value={form.database || ''} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} required />
+              <input value={form.database || ''} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} required={type !== 'clickhouse'} />
             </div>
           )}
           {selectedType.fields.includes('user') && (
             <div>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">User</label>
-              <input value={form.user || ''} onChange={(e) => setForm({ ...form, user: e.target.value })} className={inputClass} required />
+              <input value={form.user || ''} onChange={(e) => setForm({ ...form, user: e.target.value })} className={inputClass} required={type !== 'clickhouse'} />
             </div>
           )}
           {selectedType.fields.includes('password') && (
@@ -211,6 +230,12 @@ export default function Connections() {
             <div>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Warehouse (optional)</label>
               <input value={form.warehouse || ''} onChange={(e) => setForm({ ...form, warehouse: e.target.value })} className={inputClass} />
+            </div>
+          )}
+          {selectedType.fields.includes('catalog') && (
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Catalog</label>
+              <input value={form.catalog || ''} onChange={(e) => setForm({ ...form, catalog: e.target.value })} className={inputClass} required />
             </div>
           )}
           {selectedType.fields.includes('schema') && (

@@ -4,6 +4,9 @@ export const ConnectionTypeSchema = z.enum([
   'duckdb',
   'sqlite',
   'postgres',
+  'mysql',
+  'clickhouse',
+  'trino',
   'databricks',
   'snowflake',
 ]);
@@ -37,6 +40,40 @@ export const CreatePostgresConnectionSchema = z.object({
   ssl: z.boolean().default(false),
 });
 
+export const CreateMySqlConnectionSchema = z.object({
+  type: z.literal('mysql'),
+  name: z.string().min(1),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535).default(3306),
+  database: z.string().min(1),
+  user: z.string().min(1),
+  password: z.string(),
+  ssl: z.boolean().default(false),
+});
+
+export const CreateClickHouseConnectionSchema = z.object({
+  type: z.literal('clickhouse'),
+  name: z.string().min(1),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535).default(8123),
+  database: z.string().default('default'),
+  user: z.string().default('default'),
+  password: z.string().default(''),
+  ssl: z.boolean().default(false),
+});
+
+export const CreateTrinoConnectionSchema = z.object({
+  type: z.literal('trino'),
+  name: z.string().min(1),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535).default(8080),
+  catalog: z.string().min(1).default('hive'),
+  schema: z.string().min(1).default('default'),
+  user: z.string().min(1),
+  password: z.string().default(''),
+  ssl: z.boolean().default(false),
+});
+
 export const CreateDatabricksConnectionSchema = z.object({
   type: z.literal('databricks'),
   name: z.string().min(1),
@@ -60,6 +97,9 @@ export const CreateConnectionRequestSchema = z.discriminatedUnion('type', [
   CreateDuckDbConnectionSchema,
   CreateSqliteConnectionSchema,
   CreatePostgresConnectionSchema,
+  CreateMySqlConnectionSchema,
+  CreateClickHouseConnectionSchema,
+  CreateTrinoConnectionSchema,
   CreateDatabricksConnectionSchema,
   CreateSnowflakeConnectionSchema,
 ]);
