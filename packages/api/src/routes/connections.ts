@@ -173,14 +173,22 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.get('/api/connections/:id/tables', async (request) => {
     const { id } = request.params as { id: string };
-    const engine = await deps.engineFactory.forConnectionId(Number(id));
-    return engine.listTables();
+    try {
+      const engine = await deps.engineFactory.forConnectionId(Number(id));
+      return await engine.listTables();
+    } catch (error) {
+      throw new ApiError(500, 'CONNECTION_FAILED', (error as Error).message);
+    }
   });
 
   app.get('/api/connections/:id/tables/:name/preview', async (request) => {
     const { id, name } = request.params as { id: string; name: string };
-    const engine = await deps.engineFactory.forConnectionId(Number(id));
-    return engine.preview(name);
+    try {
+      const engine = await deps.engineFactory.forConnectionId(Number(id));
+      return await engine.preview(name);
+    } catch (error) {
+      throw new ApiError(500, 'CONNECTION_FAILED', (error as Error).message);
+    }
   });
 
   app.post('/api/connections/:id/query', async (request) => {
