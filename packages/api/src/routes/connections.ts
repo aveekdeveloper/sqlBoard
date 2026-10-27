@@ -39,7 +39,9 @@ interface RouteDeps {
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/connections', async () => {
-    const rows = await deps.db.select().from(connections).all();
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const rows = await deps.db.select().from(connections).where(eq(connections.tenantId, tenant.id)).all();
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -57,11 +59,13 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     if (existing) throw new ApiError(409, 'CONFLICT', `A connection named "${parsed.data.name}" already exists`);
 
     const { encryptJson } = await import('../crypto.js');
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
     const configEnc = encryptJson(parsed.data, deps.secretKey);
     const now = new Date().toISOString();
     const inserted = await deps.db
       .insert(connections)
-      .values({ name: parsed.data.name, type: parsed.data.type, configEnc, createdAt: now })
+      .values({ name: parsed.data.name, type: parsed.data.type, configEnc, tenantId: tenant.id, createdAt: now })
       .returning()
       .get();
     reply.code(201);
@@ -222,7 +226,9 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 
 export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/saved-queries', async () => {
-    const rows = await deps.db.select().from(savedQueries).all();
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, tenant.id)).all();
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -261,6 +267,8 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     if (!parsed.success) throw badRequest('Invalid saved query', parsed.error.flatten());
 
     const now = new Date().toISOString();
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
     const inserted = await deps.db
       .insert(savedQueries)
       .values({
@@ -268,6 +276,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         connectionId: parsed.data.connectionId,
         sql: parsed.data.sql,
         latestVersion: 1,
+        tenantId: tenant.id,
         createdAt: now,
         updatedAt: now,
       })
@@ -683,7 +692,9 @@ async function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSna
 
 export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/dashboards', async () => {
-    const rows = await deps.db.select().from(dashboards).all();
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, tenant.id)).all();
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -700,11 +711,14 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!parsed.success) throw badRequest('Invalid dashboard', parsed.error.flatten());
 
     const now = new Date().toISOString();
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
     const inserted = await deps.db
       .insert(dashboards)
       .values({
         name: parsed.data.name,
         description: parsed.data.description ?? null,
+        tenantId: tenant.id,
         createdAt: now,
         updatedAt: now,
       })

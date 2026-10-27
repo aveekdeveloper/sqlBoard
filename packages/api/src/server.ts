@@ -1,11 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import { eq } from 'drizzle-orm';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { SqlboardConfig } from './config.js';
 import { openDatabase } from './db/client.js';
-import { auditLog } from './db/schema.js';
+import { auditLog, tenants } from './db/schema.js';
 import { DuckDbEngine } from './engines/duckdb.js';
 import { EngineFactory } from './engines/factory.js';
 import { currentTenant, normalizeHost, defaultDomains, isValidSlug, enterTenant, createTenantContext } from './core/tenancy.js';
@@ -18,6 +19,7 @@ import {
 } from './routes/connections.js';
 import { registerAuthRoutes, requireUser } from './auth/session.js';
 import { registerTokenRoutes } from './routes/tokens.js';
+import { registerTenantRoutes } from './routes/tenants.js';
 import { ROLE_RANK } from './auth/roles.js';
 import { QueryCache } from './cache/query-cache.js';
 import { ApiError } from './errors.js';
@@ -116,16 +118,62 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
   app.addHook('onRequest', async (request) => {
     if (!config.tenancyEnabled) return;
-    // Tenant resolution: read tenant from X-Tenant header or subdomain.
-    // When tenancy is disabled (default), everything uses the default tenant.
     const host = (request.headers.host as string) ?? '';
+    const normalized = normalizeHost(host);
     const tenantHeader = (request.headers['x-tenant'] as string) ?? '';
+
+    // Try to resolve tenant from header first
     if (tenantHeader && isValidSlug(tenantHeader)) {
-      // In single-DB mode, we just set the context. Full DB-per-tenant
-      // resolution will be added when Postgres/libSQL multi-tenant is enabled.
-      const ctx = createTenantContext({ slug: tenantHeader, name: tenantHeader, domain: host });
-      enterTenant(ctx);
+      // Look up in tenant registry
+      try {
+        const rows = await db.select().from(tenants).where(eq(tenants.slug, tenantHeader)).all();
+        if (rows.length > 0) {
+          const t = rows[0];
+          if (t.status !== 'deleted') {
+            enterTenant({
+              id: t.id,
+              slug: t.slug,
+              name: t.name,
+              domain: t.domain,
+              plan: t.plan,
+              status: t.status,
+            });
+            return;
+          }
+        }
+      } catch {
+        // Fall through to 404
+      }
+      // Unknown tenant → fail closed
+      // We'll handle this in preHandler by checking if tenant was resolved
     }
+
+    // Domain-based resolution
+    const defaults = defaultDomains(config.baseDomain);
+    if (defaults.has(normalized)) return; // default tenant
+
+    // Look up by domain
+    try {
+      const rows = await db.select().from(tenants).where(eq(tenants.domain, normalized)).all();
+      if (rows.length > 0) {
+        const t = rows[0];
+        if (t.status !== 'deleted') {
+          enterTenant({
+            id: t.id,
+            slug: t.slug,
+            name: t.name,
+            domain: t.domain,
+            plan: t.plan,
+            status: t.status,
+          });
+          return;
+        }
+      }
+    } catch {
+      // Fall through
+    }
+
+    // Unknown tenant → mark as unresolved (will be handled by preHandler)
   });
 
   app.addHook('preHandler', async (request) => {
@@ -133,6 +181,25 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/')) return;
     if (PUBLIC_PATHS.has(path)) return;
+
+    // Fail-closed: if tenancy is enabled and tenant wasn't resolved, return 404
+    if (config.tenancyEnabled) {
+      const host = (request.headers.host as string) ?? '';
+      const normalized = normalizeHost(host);
+      const defaults = defaultDomains(config.baseDomain);
+      const tenantHeader = (request.headers['x-tenant'] as string) ?? '';
+      if (!defaults.has(normalized) && !tenantHeader) {
+        // No tenant resolved from host or header → 404
+        // But we need to check if a tenant was resolved via domain lookup
+        // For now, if not in defaults and no header, we already tried domain lookup
+        // in onRequest. If currentTenant() is still default, it means lookup failed.
+        const { currentTenant } = await import('./core/tenancy.js');
+        if (currentTenant().slug === 'default' && !defaults.has(normalized)) {
+          // Only fail-closed if the host is not a default domain
+          throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
+        }
+      }
+    }
 
     const user = await requireUser(request, db);
     request.user = user;
@@ -194,6 +261,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   const routeDeps = { db, engineFactory, secretKey: config.secretKey, uploadsDir: config.uploadsDir, duckDb, cache };
   registerAuthRoutes(app, db);
   registerTokenRoutes(app, { db });
+  registerTenantRoutes(app, { db });
   registerConnectionRoutes(app, routeDeps);
   registerSavedQueryRoutes(app, routeDeps);
   registerDashboardRoutes(app, routeDeps);

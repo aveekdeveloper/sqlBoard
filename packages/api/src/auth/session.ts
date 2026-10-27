@@ -2,8 +2,9 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { DrizzleDb } from '../db/client.js';
-import { apiTokens, sessions, users } from '../db/schema.js';
+import { apiTokens, sessions, tenants, users } from '../db/schema.js';
 import { ApiError, badRequest } from '../errors.js';
+import { currentTenant } from '../core/tenancy.js';
 import { ROLE_RANK, effectiveRole, toRole, type Role } from './roles.js';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -45,13 +46,22 @@ export function hashApiToken(token: string): string {
 
 export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
   app.post('/api/auth/login', async (request, reply) => {
-    const body = request.body as { email?: string; password?: string } | undefined;
+    const body = request.body as { email?: string; password?: string; tenant?: string } | undefined;
     if (!body?.email || !body?.password) {
       throw badRequest('email and password are required');
     }
 
+    const tenantSlug = body.tenant?.trim() || currentTenant().slug;
+
+    // Look up tenant
+    const tenantRows = await db.select().from(tenants).where(eq(tenants.slug, tenantSlug)).all();
+    const tenant = tenantRows[0];
+    if (!tenant || tenant.status === 'deleted') {
+      throw badRequest('unknown tenant');
+    }
+
     const rows = await db.select().from(users).where(eq(users.email, body.email)).all();
-    const user = rows[0];
+    const user = rows.find((u) => u.tenantId === tenant.id);
     if (!user || !verifyPassword(body.password, user.passwordHash)) {
       throw badRequest('invalid credentials');
     }
@@ -65,6 +75,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
     return {
       token,
       user: { id: user.id, email: user.email, role: toRole(user.role) },
+      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
       expiresAt,
     };
   });
@@ -80,6 +91,56 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
   app.get('/api/auth/me', async (request) => {
     const user = await requireUser(request, db);
     return { id: user.id, email: user.email, role: user.role };
+  });
+
+  // List tenants the current user belongs to
+  app.get('/api/auth/tenants', async (request) => {
+    const user = await requireUser(request, db);
+    const userRows = await db.select().from(users).where(eq(users.email, user.email)).all();
+    const tenantIds = userRows.map((u) => u.tenantId);
+    const tenantRows = await db.select().from(tenants).all();
+    return tenantRows
+      .filter((t) => tenantIds.includes(t.id) && t.status !== 'deleted')
+      .map((t) => ({
+        id: t.id,
+        slug: t.slug,
+        name: t.name,
+        plan: t.plan,
+        current: t.id === currentTenant().id,
+      }));
+  });
+
+  // Switch tenant (re-issue token bound to new tenant)
+  app.post('/api/auth/switch-tenant', async (request, reply) => {
+    const user = await requireUser(request, db);
+    const body = request.body as { tenant?: string } | undefined;
+    if (!body?.tenant) throw badRequest('tenant is required');
+
+    const tenantRows = await db.select().from(tenants).where(eq(tenants.slug, body.tenant)).all();
+    const tenant = tenantRows[0];
+    if (!tenant || tenant.status === 'deleted') throw badRequest('unknown tenant');
+
+    const userRows = await db.select().from(users).where(eq(users.email, user.email)).all();
+    const tenantUser = userRows.find((u) => u.tenantId === tenant.id);
+    if (!tenantUser) throw new ApiError(403, 'FORBIDDEN', 'not a member of this tenant');
+
+    const oldToken = extractToken(request);
+    if (oldToken && !oldToken.startsWith('sb_')) {
+      await db.delete(sessions).where(eq(sessions.token, oldToken));
+    }
+
+    const token = generateToken();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
+    await db.insert(sessions).values({ token, userId: tenantUser.id, expiresAt, createdAt: now.toISOString() });
+
+    reply.code(200);
+    return {
+      token,
+      user: { id: tenantUser.id, email: tenantUser.email, role: toRole(tenantUser.role) },
+      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+      expiresAt,
+    };
   });
 }
 
@@ -98,7 +159,7 @@ export async function requireUser(
   }
 
   const userRows = await db.select().from(users).where(eq(users.id, session.userId)).all();
-  const user = userRows[0];
+  const user = userRows.find((u) => u.tenantId === currentTenant().id) ?? userRows[0];
   if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'user not found');
 
   return { id: user.id, email: user.email, role: toRole(user.role) };
@@ -119,7 +180,7 @@ async function resolveApiToken(db: DrizzleDb, token: string): Promise<AuthUser> 
   }
 
   const userRows = await db.select().from(users).where(eq(users.id, apiToken.userId)).all();
-  const user = userRows[0];
+  const user = userRows.find((u) => u.tenantId === currentTenant().id) ?? userRows[0];
   if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'user not found');
 
   const now = Date.now();
