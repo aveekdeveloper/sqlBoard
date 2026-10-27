@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
+import { keymap } from '@codemirror/view';
 import * as echarts from 'echarts';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -29,8 +30,12 @@ export default function SqlWorkbench() {
   const [savedQueryVersion, setSavedQueryVersion] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [expanded, setExpanded] = useState<'preview' | 'results' | 'chart' | null>(null);
+  const [activeTab, setActiveTab] = useState<'results' | 'chart'>('results');
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
+  const expandedChartRef = useRef<HTMLDivElement>(null);
+  const expandedChartInstance = useRef<any>(null);
 
   const { data: connections } = useQuery({
     queryKey: ['connections'],
@@ -132,10 +137,11 @@ export default function SqlWorkbench() {
         backends: ['echarts', 'vegalite', 'chartjs', 'plotly'],
       });
       setCompileResult(res);
-      renderChart(res);
+      renderChart(res, chartRef.current, chartInstance);
       const errCount = res.diagnostics.filter((d: any) => d.severity === 'error').length;
       const warnCount = res.diagnostics.filter((d: any) => d.severity === 'warning').length;
       setStatus(`Compiled: ${res.flint?.chart_spec?.chartType || '?'} · ${errCount} error(s), ${warnCount} warning(s).`);
+      setActiveTab('chart');
     } catch (e: any) {
       setStatus(e.message);
     } finally {
@@ -143,17 +149,17 @@ export default function SqlWorkbench() {
     }
   }
 
-  function renderChart(res: any) {
-    if (!chartRef.current) return;
-    if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current);
+  function renderChart(res: any, container: HTMLDivElement | null, instanceRef: React.MutableRefObject<any>) {
+    if (!container) return;
+    if (!instanceRef.current) {
+      instanceRef.current = echarts.init(container);
     }
     const spec = res.compiled?.echarts || res.echarts;
-    if (spec && chartInstance.current) {
-      chartInstance.current.setOption(spec, true);
+    if (spec && instanceRef.current) {
+      instanceRef.current.setOption(spec, true);
       setTimeout(() => {
         try {
-          chartInstance.current.resize();
+          instanceRef.current.resize();
         } catch (e) {}
       }, 50);
     }
@@ -248,6 +254,21 @@ export default function SqlWorkbench() {
   const previewColumns = preview?.columns || [];
   const previewRows = preview?.rows || [];
 
+  const runKeymap = useMemo(() => keymap.of([{
+    key: 'Ctrl-Enter',
+    run: () => { runQuery(); return true; },
+  }, {
+    key: 'Mod-s',
+    run: () => { if (canWrite) saveQuery(); return true; },
+  }]), [canWrite]);
+
+  // Re-render expanded chart when opened
+  useEffect(() => {
+    if (expanded === 'chart' && compileResult && expandedChartRef.current) {
+      renderChart(compileResult, expandedChartRef.current, expandedChartInstance);
+    }
+  }, [expanded, compileResult]);
+
   return (
     <>
       <div className="space-y-6">
@@ -271,30 +292,6 @@ export default function SqlWorkbench() {
               </option>
             ))}
           </select>
-          {tables.length > 0 && (
-            <select
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  setSqlText((prev) => {
-                    const trimmed = prev.trim();
-                    if (trimmed === '' || trimmed.startsWith('--')) {
-                      return `SELECT * FROM ${e.target.value} LIMIT 100;`;
-                    }
-                    return prev + `\n-- ${e.target.value}`;
-                  });
-                }
-              }}
-              className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
-            >
-              <option value="">Insert table...</option>
-              {tables.map((t: any) => (
-                <option key={t.name} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          )}
           <button
             onClick={runQuery}
             className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
@@ -363,6 +360,7 @@ export default function SqlWorkbench() {
               <button
                 key={t.name}
                 onClick={() => loadPreview(t.name)}
+                title={t.name}
                 className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
                   selectedTable === t.name
                     ? 'bg-accent-soft text-accent-ink'
@@ -382,13 +380,24 @@ export default function SqlWorkbench() {
           {selectedTable && (
             <div className="mt-4 border-t border-line pt-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h4 className="truncate text-[12px] font-semibold text-ink">{selectedTable}</h4>
-                <button
-                  onClick={() => setSqlText(`SELECT * FROM ${selectedTable} LIMIT 100;`)}
-                  className="text-[10.5px] font-medium text-accent hover:underline"
-                >
-                  Use in editor
-                </button>
+                <h4 className="truncate text-[12px] font-semibold text-ink" title={selectedTable}>
+                  {selectedTable}
+                </h4>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => setExpanded('preview')}
+                    className="text-[10.5px] font-medium text-accent hover:underline"
+                    title="Expand preview"
+                  >
+                    ⤢
+                  </button>
+                  <button
+                    onClick={() => setSqlText(`SELECT * FROM ${selectedTable} LIMIT 100;`)}
+                    className="text-[10.5px] font-medium text-accent hover:underline"
+                  >
+                    Use in editor
+                  </button>
+                </div>
               </div>
               <div className="max-h-64 overflow-auto rounded-md border border-line">
                 {preview?.error ? (
@@ -439,20 +448,46 @@ export default function SqlWorkbench() {
               <h3 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
                 SQL + Annotations
               </h3>
-              <button
-                onClick={() => setShowGrammar(!showGrammar)}
-                className="text-[11px] font-medium text-accent hover:underline"
-              >
-                {showGrammar ? 'Hide' : 'Show'} grammar
-              </button>
+              <div className="flex items-center gap-3">
+                <span className="text-[10.5px] text-ink-faint">Ctrl+Enter to run · Ctrl+S to save</span>
+                <button
+                  onClick={() => setShowGrammar(!showGrammar)}
+                  className="text-[11px] font-medium text-accent hover:underline"
+                >
+                  {showGrammar ? 'Hide' : 'Show'} grammar
+                </button>
+              </div>
             </div>
             <div className="overflow-hidden rounded-md border border-line">
               <CodeMirror
                 value={sqlText}
                 height="320px"
-                extensions={[sql()]}
+                extensions={[sql(), runKeymap]}
                 onChange={(val) => setSqlText(val)}
               />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={runQuery}
+                className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+              >
+                ▶ Run SQL
+              </button>
+              <button
+                onClick={compileChart}
+                disabled={compiling}
+                className="focus-ring rounded-md border border-accent/30 bg-accent-soft px-4 py-2 text-[12.5px] font-medium text-accent hover:bg-accent-soft/70 disabled:opacity-50"
+              >
+                {compiling ? 'Compiling...' : 'Compile & Chart'}
+              </button>
+              {canWrite && (
+                <button
+                  onClick={saveQuery}
+                  className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+                >
+                  Save
+                </button>
+              )}
             </div>
             {showGrammar && (
               <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-paper p-3 text-[11px] text-ink-soft">
@@ -469,11 +504,41 @@ first category->series, default bar/line.`}
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-              <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
-                Results {rows.length > 0 && `(${rows.length})`}
-              </h3>
+          {/* Results / Chart tabs */}
+          <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setActiveTab('results')}
+                  className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                    activeTab === 'results'
+                      ? 'bg-accent-soft text-accent-ink'
+                      : 'text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
+                  }`}
+                >
+                  Results {rows.length > 0 && `(${rows.length})`}
+                </button>
+                <button
+                  onClick={() => setActiveTab('chart')}
+                  className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                    activeTab === 'chart'
+                      ? 'bg-accent-soft text-accent-ink'
+                      : 'text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
+                  }`}
+                >
+                  Chart
+                </button>
+              </div>
+              <button
+                onClick={() => setExpanded(activeTab === 'chart' ? 'chart' : 'results')}
+                className="text-[11px] font-medium text-accent hover:underline"
+                title="Expand to full screen"
+              >
+                ⤢ Expand
+              </button>
+            </div>
+
+            {activeTab === 'results' ? (
               <div className="max-h-72 overflow-auto rounded-md border border-line">
                 {rows.length === 0 ? (
                   <p className="p-4 text-[12px] text-ink-faint">Run a query to see results.</p>
@@ -505,13 +570,120 @@ first category->series, default bar/line.`}
                   </table>
                 )}
               </div>
-            </div>
+            ) : (
+              <div>
+                <div ref={chartRef} className="h-64 w-full md:h-80" />
+                {compileResult?.diagnostics?.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {compileResult.diagnostics.map((d: any, i: number) => (
+                      <div
+                        key={i}
+                        className={`rounded-md px-2 py-1 text-[11px] ${
+                          d.severity === 'error'
+                            ? 'bg-signal-soft text-signal'
+                            : d.severity === 'warning'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-blue-50 text-blue-700'
+                        }`}
+                      >
+                        <span className="font-mono font-semibold">{d.code}</span> {d.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
 
-            <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-              <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
-                Chart
-              </h3>
-              <div ref={chartRef} className="h-64 w-full md:h-80" />
+    {/* Expanded modal */}
+    {expanded && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setExpanded(null)}>
+        <div
+          className="relative max-h-[90vh] w-full max-w-6xl overflow-auto rounded-xl border border-line bg-surface p-4 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-[14px] font-semibold text-ink">
+              {expanded === 'preview' && `Preview: ${selectedTable}`}
+              {expanded === 'results' && `Results (${rows.length} rows)`}
+              {expanded === 'chart' && 'Chart'}
+            </h3>
+            <button
+              onClick={() => setExpanded(null)}
+              className="rounded-md px-2 py-1 text-[12px] text-ink-muted hover:bg-[#f1eee7] hover:text-ink"
+            >
+              ✕ Close
+            </button>
+          </div>
+
+          {expanded === 'preview' && (
+            <div className="overflow-auto rounded-md border border-line">
+              {previewRows.length === 0 ? (
+                <p className="p-4 text-[12px] text-ink-faint">No data to preview.</p>
+              ) : (
+                <table className="w-full text-[12px]">
+                  <thead className="sticky top-0 bg-paper">
+                    <tr>
+                      {previewColumns.map((c: string) => (
+                        <th key={c} className="border-b border-line px-3 py-2 text-left font-medium text-ink-muted">
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row: any, i: number) => (
+                      <tr key={i} className="border-b border-line/60 hover:bg-[#f7f4ed]">
+                        {previewColumns.map((c: string) => (
+                          <td key={c} className="whitespace-nowrap px-3 py-2 text-ink-soft">
+                            {String(row[c] ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {expanded === 'results' && (
+            <div className="overflow-auto rounded-md border border-line">
+              {rows.length === 0 ? (
+                <p className="p-4 text-[12px] text-ink-faint">Run a query to see results.</p>
+              ) : (
+                <table className="w-full text-[12px]">
+                  <thead className="sticky top-0 bg-paper">
+                    <tr>
+                      {columns.map((c: string) => (
+                        <th key={c} className="border-b border-line px-3 py-2 text-left font-medium text-ink-muted">
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row: any, i: number) => (
+                      <tr key={i} className="border-b border-line/60 hover:bg-[#f7f4ed]">
+                        {columns.map((c: string) => (
+                          <td key={c} className="whitespace-nowrap px-3 py-2 text-ink-soft">
+                            {String(row[c] ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {expanded === 'chart' && (
+            <div>
+              <div ref={expandedChartRef} className="h-[70vh] w-full" />
               {compileResult?.diagnostics?.length > 0 && (
                 <div className="mt-3 space-y-1">
                   {compileResult.diagnostics.map((d: any, i: number) => (
@@ -531,10 +703,10 @@ first category->series, default bar/line.`}
                 </div>
               )}
             </div>
-          </div>
+          )}
         </div>
       </div>
-    </div>
+    )}
 
     <HistoryDialog
       open={historyOpen}
