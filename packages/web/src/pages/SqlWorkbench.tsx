@@ -262,6 +262,13 @@ export default function SqlWorkbench() {
     run: () => { if (canWrite) saveQuery(); return true; },
   }]), [canWrite]);
 
+  // Re-render chart when chart tab becomes active
+  useEffect(() => {
+    if (activeTab === 'chart' && compileResult && chartRef.current) {
+      renderChart(compileResult, chartRef.current, chartInstance);
+    }
+  }, [activeTab, compileResult]);
+
   // Re-render expanded chart when opened
   useEffect(() => {
     if (expanded === 'chart' && compileResult && expandedChartRef.current) {
