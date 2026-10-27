@@ -31,6 +31,16 @@ try {
   // Not a valid URL, leave as-is
 }
 
+// If the auth token is a plain password (not a JWT), generate a JWT.
+if (authToken && !authToken.includes('.')) {
+  try {
+    const jwt = require('jsonwebtoken');
+    authToken = jwt.sign({ sub: 'sqlboard' }, authToken, { expiresIn: '365d' });
+  } catch {
+    // jsonwebtoken not available, use as-is
+  }
+}
+
 const client = createClient({
   url: databaseUrl,
   authToken: authToken || undefined,

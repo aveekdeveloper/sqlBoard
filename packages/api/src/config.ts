@@ -52,6 +52,17 @@ export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig 
     // Not a valid URL, leave as-is
   }
 
+  // If the auth token is a plain password (not a JWT), generate a JWT.
+  // Dokploy's libSQL service uses the password as the JWT signing key.
+  if (authToken && !authToken.includes('.')) {
+    try {
+      const jwt = require('jsonwebtoken');
+      authToken = jwt.sign({ sub: 'sqlboard' }, authToken, { expiresIn: '365d' });
+    } catch {
+      // jsonwebtoken not available, use as-is
+    }
+  }
+
   // Store authToken for use by db/client.ts
   if (authToken) {
     process.env.LIBSQL_AUTH_TOKEN = authToken;

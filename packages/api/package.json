@@ -29,6 +29,7 @@
     "drizzle-orm": "^0.36.0",
     "duckdb": "^1.1.0",
     "fastify": "^5.0.0",
+    "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.24.6",
     "pg": "^8.13.0",
     "snowflake-sdk": "^3.4.1",
