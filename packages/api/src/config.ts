@@ -28,7 +28,36 @@ export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig 
   // Default to a local SQLite file via libSQL. Same code path everywhere:
   // local dev uses file:, prod uses libsql:// (or http://).
   const defaultUrl = `file:${path.join(dataDir, 'sqlboard.db')}`;
-  const databaseUrl = overrides?.databaseUrl ?? process.env.DATABASE_URL ?? defaultUrl;
+  // libsql:// forces HTTPS/TLS which fails on internal Docker networks (plain HTTP).
+  // Convert to http:// for internal connections. Use https:// or libsqls:// explicitly for TLS.
+  let databaseUrl = overrides?.databaseUrl ?? process.env.DATABASE_URL ?? defaultUrl;
+  if (databaseUrl.startsWith('libsql://')) {
+    databaseUrl = databaseUrl.replace(/^libsql:\/\//, 'http://');
+  }
+
+  // Extract embedded credentials from URL (e.g., http://user:pass@host:port)
+  // libSQL client rejects URLs with credentials, so strip them and use as auth token.
+  let authToken = process.env.LIBSQL_AUTH_TOKEN ?? null;
+  try {
+    const parsed = new URL(databaseUrl);
+    if (parsed.username || parsed.password) {
+      if (!authToken) {
+        authToken = parsed.password || parsed.username;
+      }
+      parsed.username = '';
+      parsed.password = '';
+      databaseUrl = parsed.toString();
+    }
+  } catch {
+    // Not a valid URL, leave as-is
+  }
+
+  // Store authToken for use by db/client.ts
+  if (authToken) {
+    process.env.LIBSQL_AUTH_TOKEN = authToken;
+  } else {
+    delete process.env.LIBSQL_AUTH_TOKEN;
+  }
 
   return {
     host: overrides?.host ?? process.env.HOST ?? '0.0.0.0',

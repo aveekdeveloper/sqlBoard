@@ -8,8 +8,33 @@ fs.mkdirSync(dataDir, { recursive: true });
 const uploadsDir = path.join(dataDir, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-const databaseUrl = process.env.DATABASE_URL || `file:${path.join(dataDir, 'sqlboard.db')}`;
-const client = createClient({ url: databaseUrl, authToken: process.env.LIBSQL_AUTH_TOKEN });
+const rawDatabaseUrl = process.env.DATABASE_URL || `file:${path.join(dataDir, 'sqlboard.db')}`;
+// libsql:// forces HTTPS/TLS which fails on internal Docker networks (plain HTTP).
+// Convert to http:// for internal connections.
+let databaseUrl = rawDatabaseUrl.startsWith('libsql://')
+  ? rawDatabaseUrl.replace(/^libsql:\/\//, 'http://')
+  : rawDatabaseUrl;
+
+// Extract embedded credentials from URL (libSQL client rejects URLs with credentials)
+let authToken = process.env.LIBSQL_AUTH_TOKEN || null;
+try {
+  const parsed = new URL(databaseUrl);
+  if (parsed.username || parsed.password) {
+    if (!authToken) {
+      authToken = parsed.password || parsed.username;
+    }
+    parsed.username = '';
+    parsed.password = '';
+    databaseUrl = parsed.toString();
+  }
+} catch {
+  // Not a valid URL, leave as-is
+}
+
+const client = createClient({
+  url: databaseUrl,
+  authToken: authToken || undefined,
+});
 
 async function exec(sql) {
   await client.execute(sql);
@@ -20,6 +45,18 @@ async function run(sql, ...params) {
 }
 
 (async () => {
+  // Wait for libSQL server to be ready (retry up to 30 times)
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try {
+      await client.execute('SELECT 1');
+      break;
+    } catch (err) {
+      if (attempt === 30) throw err;
+      console.log(`Waiting for database... (${attempt}/30)`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
   // --- SQLite/libSQL metadata ---
   await exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member', created_at TEXT NOT NULL)`);
   await exec(`CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`);
