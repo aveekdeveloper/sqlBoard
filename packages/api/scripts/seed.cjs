@@ -11,14 +11,112 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 // --- SQLite metadata ---
 const db = new Database(path.join(dataDir, 'sqlboard.db'));
 db.pragma('journal_mode = WAL');
-db.exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member', created_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS connections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, config_enc TEXT NOT NULL, created_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS uploads (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT NOT NULL, filename TEXT NOT NULL, row_count INTEGER NOT NULL DEFAULT 0, size_bytes INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS saved_queries (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, connection_id INTEGER NOT NULL, sql TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS dashboards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS dashboard_items (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, title TEXT NOT NULL, sql TEXT NOT NULL, connection_id INTEGER NOT NULL, block_type TEXT NOT NULL DEFAULT 'chart', config_json TEXT, layout_json TEXT NOT NULL, created_at TEXT NOT NULL)`);
-db.exec(`CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT, created_at TEXT NOT NULL)`);
+db.exec(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member',
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    config_enc TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS uploads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    row_count INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS saved_queries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    connection_id INTEGER NOT NULL,
+    sql TEXT NOT NULL,
+    latest_version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS saved_query_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    saved_query_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    parent_version INTEGER,
+    message TEXT,
+    author_id INTEGER,
+    kind TEXT NOT NULL DEFAULT 'manual',
+    sql TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS saved_query_versions_unique ON saved_query_versions (saved_query_id, version)`);
+db.exec(`CREATE TABLE IF NOT EXISTS dashboards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    filters_json TEXT,
+    theme TEXT,
+    colors_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS dashboard_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dashboard_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    sql TEXT NOT NULL,
+    connection_id INTEGER NOT NULL,
+    saved_query_id INTEGER,
+    block_type TEXT NOT NULL DEFAULT 'chart',
+    config_json TEXT,
+    layout_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS dashboard_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dashboard_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    parent_version INTEGER,
+    message TEXT,
+    author_id INTEGER,
+    kind TEXT NOT NULL DEFAULT 'manual',
+    snapshot_json TEXT NOT NULL,
+    code_text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS dashboard_versions_unique ON dashboard_versions (dashboard_id, version)`);
+db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'viewer',
+    expires_at TEXT,
+    last_used_at TEXT,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL
+  )`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_unique ON api_tokens (token_hash)`);
 
 // Seed admin user
 const salt = randomBytes(16).toString('hex');

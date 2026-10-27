@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import path from 'node:path';
+import fs from 'node:fs';
 import type { SqlboardConfig } from './config.js';
 import { openDatabase } from './db/client.js';
 import { auditLog } from './db/schema.js';
@@ -167,6 +169,32 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   registerDashboardRoutes(app, routeDeps);
   registerUploadRoutes(app, routeDeps);
   registerCompileRoute(app, routeDeps);
+
+  // Serve the built web app (SPA) when present. In dev the Vite dev server owns
+  // the frontend, so this is a no-op unless WEB_DIST_DIR (or packages/web/dist)
+  // exists.
+  const webDistDir =
+    process.env.WEB_DIST_DIR ?? path.resolve(process.cwd(), 'packages/web/dist');
+  if (fs.existsSync(path.join(webDistDir, 'index.html'))) {
+    await app.register(import('@fastify/static'), {
+      root: webDistDir,
+      prefix: '/',
+      wildcard: false,
+    });
+    app.get('/*', async (request, reply) => {
+      const url = request.url.split('?')[0];
+      if (
+        url.startsWith('/api') ||
+        url.startsWith('/docs') ||
+        url === '/openapi.json' ||
+        url === '/health'
+      ) {
+        reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } });
+        return;
+      }
+      return reply.sendFile('index.html');
+    });
+  }
 
   return { app, db, sqlite, duckDb, engineFactory, cache, config };
 }

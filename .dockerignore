@@ -3,7 +3,7 @@ dist
 coverage
 *.tsbuildinfo
 .git
-data
+/data
 uploads
 .env
 .env.*

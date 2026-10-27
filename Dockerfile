@@ -13,12 +13,17 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV PORT=3001
+ENV WEB_DIST_DIR=/app/packages/web/dist
 COPY --from=build /app/packages/api/dist ./packages/api/dist
 COPY --from=build /app/packages/api/package.json ./packages/api/
+COPY --from=build /app/packages/api/scripts ./packages/api/scripts
+COPY --from=build /app/packages/api/data ./packages/api/data
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/
+COPY --from=build /app/packages/web/dist ./packages/web/dist
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
-RUN mkdir -p /data
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh && mkdir -p /data
 EXPOSE 3001
-CMD ["node", "packages/api/dist/index.js"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

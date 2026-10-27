@@ -138,6 +138,40 @@ Named presets are compiled by sqlFlint into the returned ECharts option. Custom
 the rendered dashboard always return the same colors. The dashboard Theme editor
 writes these annotations into every chart block for you.
 
+## Deployment
+
+### Docker Compose (self-hosted)
+
+```bash
+cp .env.example .env
+# edit .env and set a strong SECRET_KEY
+docker compose up -d --build
+```
+
+The container seeds sample data on first boot (admin `admin@example.com` / `admin`),
+serves the API and the web UI on port `3001`, and persists all state in the
+`sqlboard-data` volume. Back up that volume (it contains `sqlboard.db`,
+`sqlboard.duckdb`, and `uploads/`).
+
+### Dokploy
+
+1. In Dokploy, create an application from this repository (GitHub).
+2. Build type: **Dockerfile** (or Docker Compose — both work).
+3. Set environment variables in the Dokploy UI:
+   - `SECRET_KEY` — a long random string. **Required.** Used to encrypt connection
+     credentials at rest; changing it later invalidates stored connections.
+   - `CACHE_TTL_MINUTES`, `MAX_CACHE_ROWS`, `QUERY_TIMEOUT_MS` (optional).
+4. Add a persistent volume mounted at `/data` (Dokploy → Storage). This holds the
+   SQLite database, DuckDB file, and uploaded files.
+5. Assign a domain in Dokploy; Traefik terminates TLS and proxies to port `3001`.
+6. Deploy. The first boot seeds the admin user and sample dashboard. Subsequent
+   deploys keep the data volume.
+
+Notes:
+- Single replica only: SQLite + DuckDB are file-backed, so do not scale horizontally.
+- Back up `/data` regularly.
+- To reset to a clean state, delete the volume and redeploy (data is lost).
+
 ## License
 
 MIT
