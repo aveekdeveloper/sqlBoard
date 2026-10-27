@@ -12,6 +12,8 @@ export interface SqlboardConfig {
   cacheTtlMinutes: number;
   maxCacheRows: number;
   queryTimeoutMs: number;
+  tenancyEnabled: boolean;
+  baseDomain: string;
 }
 
 export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig {
@@ -38,5 +40,7 @@ export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig 
     queryTimeoutMs: Number(
       overrides?.queryTimeoutMs ?? process.env.QUERY_TIMEOUT_MS ?? 30000,
     ),
+    tenancyEnabled: overrides?.tenancyEnabled ?? process.env.TENANCY_ENABLED === 'true',
+    baseDomain: overrides?.baseDomain ?? process.env.BASE_DOMAIN ?? '',
   };
 }

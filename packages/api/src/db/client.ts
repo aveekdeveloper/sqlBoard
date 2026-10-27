@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { eq } from 'drizzle-orm';
 import { encryptJson } from '../crypto.js';
 import type { SqlboardConfig } from '../config.js';
-import { connections } from './schema.js';
+import { connections, tenants } from './schema.js';
 
 export type DrizzleDb = ReturnType<typeof drizzle>;
 
@@ -14,11 +14,23 @@ export interface OpenedDatabase {
 }
 
 const BOOTSTRAP_SQL = [
+  `CREATE TABLE IF NOT EXISTS tenants (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    domain TEXT UNIQUE,
+    plan TEXT NOT NULL DEFAULT 'free',
+    status TEXT NOT NULL DEFAULT 'active',
+    owner_email TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'member',
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -33,6 +45,7 @@ const BOOTSTRAP_SQL = [
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     config_enc TEXT NOT NULL,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS uploads (
@@ -41,6 +54,7 @@ const BOOTSTRAP_SQL = [
     filename TEXT NOT NULL,
     row_count INTEGER NOT NULL DEFAULT 0,
     size_bytes INTEGER NOT NULL DEFAULT 0,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS saved_queries (
@@ -49,6 +63,7 @@ const BOOTSTRAP_SQL = [
     connection_id INTEGER NOT NULL,
     sql TEXT NOT NULL,
     latest_version INTEGER NOT NULL DEFAULT 0,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -71,6 +86,7 @@ const BOOTSTRAP_SQL = [
     filters_json TEXT,
     theme TEXT,
     colors_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -105,6 +121,7 @@ const BOOTSTRAP_SQL = [
     action TEXT NOT NULL,
     resource_type TEXT NOT NULL,
     resource_id TEXT,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS api_tokens (
@@ -117,6 +134,7 @@ const BOOTSTRAP_SQL = [
     expires_at TEXT,
     last_used_at TEXT,
     revoked_at TEXT,
+    tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     created_at TEXT NOT NULL
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_unique ON api_tokens (token_hash)`,
@@ -144,6 +162,13 @@ export async function openDatabase(config: SqlboardConfig): Promise<OpenedDataba
     'ALTER TABLE dashboards ADD COLUMN filters_json TEXT',
     'ALTER TABLE dashboards ADD COLUMN theme TEXT',
     'ALTER TABLE dashboards ADD COLUMN colors_json TEXT',
+    'ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
+    'ALTER TABLE connections ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
+    'ALTER TABLE uploads ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
+    'ALTER TABLE saved_queries ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
+    'ALTER TABLE dashboards ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
+    'ALTER TABLE audit_log ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
+    'ALTER TABLE api_tokens ADD COLUMN tenant_id TEXT NOT NULL DEFAULT \'00000000-0000-0000-0000-000000000000\'',
   ];
   for (const m of migrations) {
     try {
@@ -151,6 +176,22 @@ export async function openDatabase(config: SqlboardConfig): Promise<OpenedDataba
     } catch {
       // Column already exists.
     }
+  }
+
+  // Seed default tenant if none exists
+  const existingTenants = await db.select().from(tenants).all();
+  if (existingTenants.length === 0) {
+    await db.insert(tenants).values({
+      id: '00000000-0000-0000-0000-000000000000',
+      slug: 'default',
+      name: 'Default',
+      domain: null,
+      plan: 'free',
+      status: 'active',
+      ownerEmail: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   // Seed built-in DuckDB connection if none exists

@@ -5,6 +5,7 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: text('role').notNull().default('member'),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
 });
 
@@ -21,6 +22,7 @@ export const connections = sqliteTable('connections', {
   name: text('name').notNull(),
   type: text('type').notNull(),
   configEnc: text('config_enc').notNull(),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
 });
 
@@ -30,6 +32,7 @@ export const uploads = sqliteTable('uploads', {
   filename: text('filename').notNull(),
   rowCount: integer('row_count').notNull().default(0),
   sizeBytes: integer('size_bytes').notNull().default(0),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
 });
 
@@ -39,6 +42,7 @@ export const savedQueries = sqliteTable('saved_queries', {
   connectionId: integer('connection_id').notNull(),
   sql: text('sql').notNull(),
   latestVersion: integer('latest_version').notNull().default(0),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -62,6 +66,7 @@ export const dashboards = sqliteTable('dashboards', {
   filtersJson: text('filters_json'),
   theme: text('theme'),
   colorsJson: text('colors_json'),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -98,7 +103,20 @@ export const auditLog = sqliteTable('audit_log', {
   action: text('action').notNull(),
   resourceType: text('resource_type').notNull(),
   resourceId: text('resource_id'),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
+});
+
+export const tenants = sqliteTable('tenants', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull().default(''),
+  domain: text('domain').unique(),
+  plan: text('plan').notNull().default('free'),
+  status: text('status').notNull().default('active'),
+  ownerEmail: text('owner_email'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 });
 
 export const apiTokens = sqliteTable('api_tokens', {
@@ -111,5 +129,6 @@ export const apiTokens = sqliteTable('api_tokens', {
   expiresAt: text('expires_at'),
   lastUsedAt: text('last_used_at'),
   revokedAt: text('revoked_at'),
+  tenantId: text('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
   createdAt: text('created_at').notNull(),
 });

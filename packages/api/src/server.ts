@@ -8,6 +8,7 @@ import { openDatabase } from './db/client.js';
 import { auditLog } from './db/schema.js';
 import { DuckDbEngine } from './engines/duckdb.js';
 import { EngineFactory } from './engines/factory.js';
+import { currentTenant, normalizeHost, defaultDomains, isValidSlug, enterTenant, createTenantContext } from './core/tenancy.js';
 import {
   registerConnectionRoutes,
   registerSavedQueryRoutes,
@@ -112,6 +113,20 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   });
 
   app.get('/openapi.json', async () => app.swagger());
+
+  app.addHook('onRequest', async (request) => {
+    if (!config.tenancyEnabled) return;
+    // Tenant resolution: read tenant from X-Tenant header or subdomain.
+    // When tenancy is disabled (default), everything uses the default tenant.
+    const host = (request.headers.host as string) ?? '';
+    const tenantHeader = (request.headers['x-tenant'] as string) ?? '';
+    if (tenantHeader && isValidSlug(tenantHeader)) {
+      // In single-DB mode, we just set the context. Full DB-per-tenant
+      // resolution will be added when Postgres/libSQL multi-tenant is enabled.
+      const ctx = createTenantContext({ slug: tenantHeader, name: tenantHeader, domain: host });
+      enterTenant(ctx);
+    }
+  });
 
   app.addHook('preHandler', async (request) => {
     if (request.method === 'OPTIONS') return;
