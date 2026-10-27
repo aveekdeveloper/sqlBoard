@@ -14,6 +14,12 @@ export interface SqlboardConfig {
   queryTimeoutMs: number;
   tenancyEnabled: boolean;
   baseDomain: string;
+  s3Endpoint: string | null;
+  s3AccessKey: string | null;
+  s3SecretKey: string | null;
+  s3Bucket: string;
+  s3Region: string;
+  s3ForcePathStyle: boolean;
 }
 
 export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig {
@@ -42,5 +48,11 @@ export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig 
     ),
     tenancyEnabled: overrides?.tenancyEnabled ?? process.env.TENANCY_ENABLED === 'true',
     baseDomain: overrides?.baseDomain ?? process.env.BASE_DOMAIN ?? '',
+    s3Endpoint: overrides?.s3Endpoint ?? process.env.S3_ENDPOINT ?? null,
+    s3AccessKey: overrides?.s3AccessKey ?? process.env.S3_ACCESS_KEY ?? null,
+    s3SecretKey: overrides?.s3SecretKey ?? process.env.S3_SECRET_KEY ?? null,
+    s3Bucket: overrides?.s3Bucket ?? process.env.S3_BUCKET ?? 'sqlboard',
+    s3Region: overrides?.s3Region ?? process.env.S3_REGION ?? 'us-east-1',
+    s3ForcePathStyle: overrides?.s3ForcePathStyle ?? (process.env.S3_FORCE_PATH_STYLE !== 'false'),
   };
 }

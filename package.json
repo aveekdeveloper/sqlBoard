@@ -31,6 +31,7 @@
     "esbuild@0.25.12": true
   },
   "dependencies": {
+    "@aws-sdk/s3-request-presigner": "^3.1157.0",
     "@codemirror/lang-markdown": "^6.5.2",
     "@databricks/sql": "^2.4.0",
     "@libsql/client": "^0.18.0",

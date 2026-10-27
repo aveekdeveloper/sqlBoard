@@ -22,6 +22,7 @@ import { registerTokenRoutes } from './routes/tokens.js';
 import { registerTenantRoutes } from './routes/tenants.js';
 import { ROLE_RANK } from './auth/roles.js';
 import { QueryCache } from './cache/query-cache.js';
+import { createStorage } from './storage/index.js';
 import { ApiError } from './errors.js';
 import './auth/types.js';
 
@@ -258,7 +259,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
   app.get('/api/health', async () => ({ status: 'ok', version: '0.1.0' }));
 
-  const routeDeps = { db, engineFactory, secretKey: config.secretKey, uploadsDir: config.uploadsDir, duckDb, cache };
+  const routeDeps = { db, engineFactory, secretKey: config.secretKey, uploadsDir: config.uploadsDir, duckDb, cache, storage: createStorage(config) };
   registerAuthRoutes(app, db);
   registerTokenRoutes(app, { db });
   registerTenantRoutes(app, { db });

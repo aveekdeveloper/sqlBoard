@@ -12,6 +12,8 @@
     "seed": "node scripts/seed-admin.cjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0",
     "@clickhouse/client": "^1.24.1",
     "@databricks/sql": "^2.4.0",
     "@fastify/cors": "^10.0.0",

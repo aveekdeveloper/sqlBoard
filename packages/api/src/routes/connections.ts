@@ -36,6 +36,7 @@ interface RouteDeps {
   uploadsDir: string;
   duckDb: import('../engines/duckdb.js').DuckDbEngine;
   cache: import('../cache/query-cache.js').QueryCache;
+  storage: import('../storage/index.js').StorageBackend;
 }
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -1063,14 +1064,28 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
       throw badRequest(`Unsupported file type: ${ext}. Allowed: ${allowed.join(', ')}`);
     }
 
-    const uploadsDir = deps.uploadsDir;
+    const buffer = await data.toBuffer();
+
+    // Store file in storage backend (S3 or local)
+    const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const storageKey = `uploads/${safeName}`;
+    await deps.storage.upload(storageKey, buffer, data.mimetype);
+
+    // DuckDB needs a local file path for ingestion
     const fs = await import('node:fs');
     const path = await import('node:path');
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    const filePath = path.join(uploadsDir, safeName);
-    const buffer = await data.toBuffer();
-    fs.writeFileSync(filePath, buffer);
+    const os = await import('node:os');
+    let filePath: string;
+    if (deps.storage.constructor.name === 'LocalStorage') {
+      filePath = deps.uploadsDir + '/' + safeName; // local path
+    } else {
+      // Download from S3 to temp file for DuckDB ingestion
+      const tmpDir = path.join(os.tmpdir(), 'sqlboard-uploads');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      filePath = path.join(tmpDir, safeName);
+      const downloaded = await deps.storage.download(storageKey);
+      fs.writeFileSync(filePath, downloaded);
+    }
 
     const tableName = `upload_${Date.now()}`;
     const engine = deps.duckDb;
