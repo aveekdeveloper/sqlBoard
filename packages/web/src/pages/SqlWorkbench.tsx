@@ -8,7 +8,7 @@ import * as echarts from 'echarts';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import HistoryDialog from '../dashboard/HistoryDialog.js';
-import { styleAxes } from '../dashboard/ChartBody.js';
+import { styleAxes, styleBars } from '../dashboard/ChartBody.js';
 
 export default function SqlWorkbench() {
   const { canWrite } = useAuth();
@@ -157,7 +157,7 @@ export default function SqlWorkbench() {
     }
     const spec = res.compiled?.echarts || res.echarts;
     if (spec && instanceRef.current) {
-      instanceRef.current.setOption(styleAxes(spec as Record<string, unknown>), true);
+      instanceRef.current.setOption(styleAxes(styleBars(spec as Record<string, unknown>, sqlText), sqlText), true);
       setTimeout(() => {
         try {
           instanceRef.current.resize();

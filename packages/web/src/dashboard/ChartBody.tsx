@@ -8,22 +8,74 @@ import { BlockEmpty, BlockError, BlockLoading } from './BlockState.js';
 const FONT_STACK =
   "Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif";
 
-export function styleAxes(option: Record<string, unknown>): Record<string, unknown> {
-  const formatNumber = (value: number): string => {
-    if (!Number.isFinite(value)) return String(value);
-    const abs = Math.abs(value);
+function parseAnnotations(sql: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of (sql || '').split('\n')) {
+    const match = line.match(/^--\s*@([a-zA-Z0-9_]+):\s*(.*?)\s*$/);
+    if (match) result[match[1].toLowerCase()] = match[2];
+  }
+  return result;
+}
+
+function formatNumber(value: number, format: string): string {
+  if (!Number.isFinite(value)) return String(value);
+  const abs = Math.abs(value);
+  if (format === 'currency') {
+    if (abs >= 1_000_000) return '$' + (value / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (abs >= 1_000) return '$' + (value / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+    if (Number.isInteger(value)) return '$' + value.toLocaleString();
+    return '$' + value.toFixed(2);
+  }
+  if (format === 'compact') {
     if (abs >= 1_000_000) return (value / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
     if (abs >= 1_000) return (value / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
     if (Number.isInteger(value)) return value.toLocaleString();
     return value.toFixed(2);
-  };
+  }
+  if (format === 'number') {
+    if (Number.isInteger(value)) return value.toLocaleString();
+    return value.toFixed(2);
+  }
+  // auto
+  if (abs >= 1_000_000) return (value / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (abs >= 1_000) return (value / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toFixed(2);
+}
 
-  const styleAxis = (axis: unknown) => {
+function formatDate(value: unknown): string {
+  if (typeof value !== 'string') return String(value ?? '');
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  const month = d.toLocaleString('en', { month: 'short' });
+  const year = d.getFullYear();
+  const day = d.getDate();
+  if (/^\d{4}-\d{2}$/.test(value)) return `${month} ${year}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${month} ${day}`;
+  return `${month} ${day}, ${year}`;
+}
+
+function isDateLike(val: unknown): boolean {
+  if (typeof val !== 'string') return false;
+  return /^\d{4}-\d{2}(-\d{2})?/.test(val) || (!isNaN(Date.parse(val)) && val.includes('-'));
+}
+
+export function styleAxes(option: Record<string, unknown>, sql?: string): Record<string, unknown> {
+  const annotations = parseAnnotations(sql || '');
+  const xFormat = (annotations.xformat || annotations.xFormat || 'auto').toLowerCase();
+  const yFormat = (annotations.yformat || annotations.yFormat || 'auto').toLowerCase();
+  const rotateOverride = annotations.rotate ? Number(annotations.rotate) : null;
+
+  const styleAxis = (axis: unknown, format: string) => {
     if (!axis || typeof axis !== 'object' || Array.isArray(axis)) return axis;
     const a = axis as Record<string, unknown>;
     const labels = Array.isArray(a.data) ? a.data : [];
     const maxLabelLen = labels.reduce((max: number, l: unknown) => Math.max(max, String(l ?? '').length), 0);
-    const rotate = maxLabelLen > 12 ? 45 : maxLabelLen > 8 ? 30 : 0;
+    const autoRotate = maxLabelLen > 12 ? 45 : maxLabelLen > 8 ? 30 : 0;
+    const rotate = rotateOverride !== null && !isNaN(rotateOverride) ? rotateOverride : autoRotate;
+    const isDate = labels.length > 0 && labels.some(isDateLike);
+    const resolvedFormat = format === 'auto' ? (isDate ? 'date' : 'compact') : format;
+
     return {
       ...a,
       axisLabel: {
@@ -32,7 +84,9 @@ export function styleAxes(option: Record<string, unknown>): Record<string, unkno
         interval: 'auto',
         hideOverlap: true,
         formatter: (val: unknown) => {
-          if (typeof val === 'number') return formatNumber(val);
+          if (resolvedFormat === 'date') return formatDate(val);
+          if (typeof val === 'number') return formatNumber(val, resolvedFormat);
+          if (isDateLike(val)) return formatDate(val);
           return String(val ?? '');
         },
       },
@@ -40,11 +94,11 @@ export function styleAxes(option: Record<string, unknown>): Record<string, unkno
   };
 
   const xAxis = Array.isArray(option.xAxis)
-    ? option.xAxis.map(styleAxis)
-    : styleAxis(option.xAxis);
+    ? option.xAxis.map((a) => styleAxis(a, xFormat))
+    : styleAxis(option.xAxis, xFormat);
   const yAxis = Array.isArray(option.yAxis)
-    ? option.yAxis.map(styleAxis)
-    : styleAxis(option.yAxis);
+    ? option.yAxis.map((a) => styleAxis(a, yFormat))
+    : styleAxis(option.yAxis, yFormat);
 
   const xRotated = Array.isArray(xAxis)
     ? xAxis.some((a: any) => (a?.axisLabel?.rotate ?? 0) > 0)
@@ -54,6 +108,32 @@ export function styleAxes(option: Record<string, unknown>): Record<string, unkno
     : option.grid;
 
   return { ...option, xAxis, yAxis, grid };
+}
+
+export function styleBars(option: Record<string, unknown>, sql?: string): Record<string, unknown> {
+  const annotations = parseAnnotations(sql || '');
+  const barWidth = annotations.barwidth || annotations.barWidth;
+  const barGap = annotations.bargap || annotations.barGap;
+  const barCategoryGap = annotations.barcategorygap || annotations.barCategoryGap;
+
+  if (!barWidth && !barGap && !barCategoryGap) return option;
+
+  const patchSeries = (s: any) => {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return s;
+    const type = String(s.type || '').toLowerCase();
+    if (type !== 'bar') return s;
+    const patched = { ...s };
+    if (barWidth) patched.barWidth = barWidth;
+    if (barGap) patched.barGap = barGap;
+    if (barCategoryGap) patched.barCategoryGap = barCategoryGap;
+    return patched;
+  };
+
+  const series = Array.isArray(option.series)
+    ? option.series.map(patchSeries)
+    : patchSeries(option.series);
+
+  return { ...option, series };
 }
 
 function styleLegend(legend: unknown): unknown {
@@ -98,7 +178,7 @@ function styleTooltip(tooltip: unknown): unknown {
   };
 }
 
-function buildOption(raw: Record<string, unknown>): EChartsOption {
+function buildOption(raw: Record<string, unknown>, sql?: string): EChartsOption {
   const {
     title: _title,
     subtitle: _subtitle,
@@ -116,7 +196,7 @@ function buildOption(raw: Record<string, unknown>): EChartsOption {
       ? { containLabel: true, left: 10, right: 14, top: 16, bottom: 8, ...(grid as object) }
       : (grid as object | undefined);
 
-  const styled = styleAxes({
+  const styled = styleAxes(styleBars({
     ...rest,
     backgroundColor: 'transparent',
     animationDuration: 420,
@@ -150,7 +230,7 @@ function buildOption(raw: Record<string, unknown>): EChartsOption {
         },
       },
     ],
-  } as Record<string, unknown>);
+  } as Record<string, unknown>, sql), sql);
 
   return styled as EChartsOption;
 }
@@ -168,8 +248,8 @@ export default function ChartBody({
 
   const option = useMemo(() => {
     if (!data?.option) return null;
-    return buildOption(data.option);
-  }, [data]);
+    return buildOption(data.option, item.sql);
+  }, [data, item.sql]);
 
   useEffect(() => {
     const element = containerRef.current;

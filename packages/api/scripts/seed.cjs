@@ -164,21 +164,21 @@ async function run(sql, ...params) {
 -- @groupby: region
 -- @stack: true
 -- @theme: powerbi-light
-SELECT month, region, SUM(revenue) AS revenue FROM sales GROUP BY month, region ORDER BY month, region;`;
+SELECT month, region, SUM(revenue) AS revenue FROM sales WHERE ({Region} IS NULL OR region = {Region}) GROUP BY month, region ORDER BY month, region;`;
   const q2 = `-- @viz: line
 -- @x: month
 -- @y: users
 -- @groupby: region
-SELECT month, region, SUM(users) AS users FROM users GROUP BY month, region ORDER BY month, region;`;
+SELECT month, region, SUM(users) AS users FROM users WHERE ({Region} IS NULL OR region = {Region}) GROUP BY month, region ORDER BY month, region;`;
   const q3 = `-- @viz: pie
 -- @x: category
 -- @y: sales
-SELECT category, SUM(sales) AS sales FROM products GROUP BY category;`;
+SELECT category, SUM(sales) AS sales FROM products WHERE ({Category} IS NULL OR category = {Category}) GROUP BY category;`;
   const q4 = `-- @viz: bar
 -- @x: subcategory
 -- @y: sales
 -- @groupby: category
-SELECT subcategory, category, SUM(sales) AS sales FROM products GROUP BY subcategory, category ORDER BY sales DESC;`;
+SELECT subcategory, category, SUM(sales) AS sales FROM products WHERE ({Category} IS NULL OR category = {Category}) GROUP BY subcategory, category ORDER BY sales DESC;`;
 
   const existingQueries = await client.execute({ sql: 'SELECT COUNT(*) AS c FROM saved_queries' });
   if (Number(existingQueries.rows[0].c) === 0) {
