@@ -1,5 +1,5 @@
-# Multi-tenant compose (simplified for Dokploy).
-# Usage: docker compose -f docker-compose.yml up -d
+# Multi-service compose with libSQL for Dokploy.
+# Usage: docker compose up -d
 services:
   sqld:
     image: ghcr.io/tursodatabase/libsql-server:latest
@@ -9,11 +9,6 @@ services:
     volumes:
       - sqld-data:/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   sqlboard:
     build: .
@@ -24,7 +19,7 @@ services:
       - DATABASE_URL=http://sqld:8080
       - LIBSQL_AUTH_TOKEN=${LIBSQL_AUTH_TOKEN:-}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
-      - TENANCY_ENABLED=${TENANCY_ENABLED:-true}
+      - TENANCY_ENABLED=${TENANCY_ENABLED:-false}
       - BASE_DOMAIN=${BASE_DOMAIN:-}
       - CACHE_TTL_MINUTES=${CACHE_TTL_MINUTES:-5}
       - MAX_CACHE_ROWS=${MAX_CACHE_ROWS:-10000}
@@ -42,7 +37,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
 volumes:
   sqld-data:

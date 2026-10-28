@@ -63,7 +63,7 @@ async function run(sql, ...params) {
     } catch (err) {
       if (attempt === 30) throw err;
       console.log(`Waiting for database... (${attempt}/30)`);
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
