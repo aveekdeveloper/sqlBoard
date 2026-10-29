@@ -529,6 +529,7 @@ export default function SqlWorkbench() {
 -- @semantic: col: Type, other: Type   (e.g. revenue: Amount, region: Category)
 --   Types: Date, Month, Country, State, City, Category, Quantity, Amount, Price,
 --          Percentage, Count, ID, Name, Status, Number, Unknown (and more)
+--   Drives both rendering (axis type, formatting, geo) and agent understanding.
 -- @flint: {"chart_spec":{"title":"Custom"}}
 
 No annotations? The compiler infers: temporal->x, first measure->y,
