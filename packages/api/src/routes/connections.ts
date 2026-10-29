@@ -159,7 +159,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
 
     await deps.engineFactory.closeConnection(numericId);
-    deps.cache.clear();
+    deps.cache.invalidateConnection(numericId);
 
     await deps.db
       .update(connections)
@@ -183,7 +183,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
       .where(eq(connections.id, numericId))
     if (rows.length === 0) throw notFound(`Connection ${id} not found`);
     await deps.engineFactory.closeConnection(numericId);
-    deps.cache.clear();
+    deps.cache.invalidateConnection(numericId);
     await deps.db.delete(connections).where(eq(connections.id, numericId));
     reply.code(204);
   });

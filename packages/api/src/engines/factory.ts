@@ -83,7 +83,7 @@ export class EngineFactory {
         password: String(config.password ?? ''),
         ssl: Boolean(config.ssl),
       };
-      return new MySqlEngine(mysqlConfig);
+      return new MySqlEngine(mysqlConfig, this.deps.config.queryTimeoutMs);
     }
 
     if (type === 'clickhouse') {
@@ -95,7 +95,7 @@ export class EngineFactory {
         password: String(config.password ?? ''),
         ssl: Boolean(config.ssl),
       };
-      return new ClickHouseEngine(chConfig);
+      return new ClickHouseEngine(chConfig, this.deps.config.queryTimeoutMs);
     }
 
     if (type === 'trino') {
@@ -108,7 +108,7 @@ export class EngineFactory {
         password: String(config.password ?? ''),
         ssl: Boolean(config.ssl),
       };
-      return new TrinoEngine(trinoConfig);
+      return new TrinoEngine(trinoConfig, this.deps.config.queryTimeoutMs);
     }
 
     if (type === 'databricks') {
@@ -119,7 +119,7 @@ export class EngineFactory {
         catalog: config.catalog ? String(config.catalog) : undefined,
         schema: config.schema ? String(config.schema) : undefined,
       };
-      return new DatabricksEngine(dbConfig);
+      return new DatabricksEngine(dbConfig, this.deps.config.queryTimeoutMs);
     }
 
     if (type === 'snowflake') {
@@ -131,7 +131,7 @@ export class EngineFactory {
         database: config.database ? String(config.database) : undefined,
         schema: config.schema ? String(config.schema) : undefined,
       };
-      return new SnowflakeEngine(sfConfig);
+      return new SnowflakeEngine(sfConfig, this.deps.config.queryTimeoutMs);
     }
 
     throw new ApiError(400, 'CONNECTION_FAILED', `Unknown connection type: ${type}`);

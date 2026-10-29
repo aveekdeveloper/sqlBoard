@@ -19,7 +19,7 @@ export interface TrinoConfig {
 export class TrinoEngine implements QueryEngine {
   readonly type = 'trino' as const;
 
-  constructor(private readonly config: TrinoConfig) {}
+  constructor(private readonly config: TrinoConfig, private readonly timeoutMs: number = 30000) {}
 
   private baseUrl(): string {
     const protocol = this.config.ssl ? 'https' : 'http';
@@ -75,9 +75,20 @@ export class TrinoEngine implements QueryEngine {
   }
 
   async run(sql: string, options?: RunOptions): Promise<QueryResult> {
-    const rows = await this.execute(sql);
-    const limited = options?.maxRows ? rows.slice(0, options.maxRows) : rows;
-    return toQueryResult(limited);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const rows = await Promise.race([
+        this.execute(sql),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Trino query timed out after ${this.timeoutMs}ms`)), this.timeoutMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+      const limited = options?.maxRows ? rows.slice(0, options.maxRows) : rows;
+      return toQueryResult(limited);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTables(): Promise<TableInfo[]> {

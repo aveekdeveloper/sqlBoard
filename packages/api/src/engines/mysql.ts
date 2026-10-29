@@ -23,7 +23,7 @@ export class MySqlEngine implements QueryEngine {
   private conn: Connection | null = null;
   private ready: Promise<void> | null = null;
 
-  constructor(private readonly config: MySqlConfig) {}
+  constructor(private readonly config: MySqlConfig, private readonly timeoutMs: number = 30000) {}
 
   private async ensureReady(): Promise<void> {
     if (this.conn) {
@@ -52,10 +52,23 @@ export class MySqlEngine implements QueryEngine {
 
   async run(sql: string, options?: RunOptions): Promise<QueryResult> {
     await this.ensureReady();
-    const [rows] = await this.conn!.query(sql);
-    const arr = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [];
-    const limited = options?.maxRows ? arr.slice(0, options.maxRows) : arr;
-    return toQueryResult(limited);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const rowsPromise = this.conn!.query(sql).then((r) => r);
+      const result = await Promise.race([
+        rowsPromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`MySQL query timed out after ${this.timeoutMs}ms`)), this.timeoutMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+      const [rows] = result as unknown as [unknown, unknown];
+      const arr = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [];
+      const limited = options?.maxRows ? arr.slice(0, options.maxRows) : arr;
+      return toQueryResult(limited);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTables(): Promise<TableInfo[]> {

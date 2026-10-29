@@ -23,7 +23,7 @@ export class DatabricksEngine implements QueryEngine {
   private catalog: string | undefined;
   private schema: string | undefined;
 
-  constructor(private readonly config: DatabricksConfig) {
+  constructor(private readonly config: DatabricksConfig, private readonly timeoutMs: number = 30000) {
     this.catalog = config.catalog;
     this.schema = config.schema;
   }
@@ -64,13 +64,27 @@ export class DatabricksEngine implements QueryEngine {
 
   async run(sql: string, options?: RunOptions): Promise<QueryResult> {
     await this.ensureReady();
-    const operation = await this.session!.executeStatement(sql);
-    await operation.finished();
-    const rows = await operation.fetchAll({ maxRows: options?.maxRows });
-    await operation.close().catch(() => undefined);
-    const arr = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [];
-    const limited = options?.maxRows ? arr.slice(0, options.maxRows) : arr;
-    return toQueryResult(limited);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const resultPromise = (async () => {
+        const operation = await this.session!.executeStatement(sql);
+        await operation.finished();
+        const rows = await operation.fetchAll({ maxRows: options?.maxRows });
+        await operation.close().catch(() => undefined);
+        const arr = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [];
+        const limited = options?.maxRows ? arr.slice(0, options.maxRows) : arr;
+        return toQueryResult(limited);
+      })();
+      return await Promise.race([
+        resultPromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Databricks query timed out after ${this.timeoutMs}ms`)), this.timeoutMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTables(): Promise<TableInfo[]> {

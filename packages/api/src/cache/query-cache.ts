@@ -41,6 +41,14 @@ export class QueryCache {
     this.cache.delete(key);
   }
 
+  /** Drop every cached result for a single connection (keys are `connectionId:...`). */
+  invalidateConnection(connectionId: number): void {
+    const prefix = `${connectionId}:`;
+    for (const key of this.cache.keys()) {
+      if (String(key).startsWith(prefix)) this.cache.delete(key);
+    }
+  }
+
   clear(): void {
     this.cache.clear();
   }

@@ -21,7 +21,7 @@ export class ClickHouseEngine implements QueryEngine {
 
   private client: ClickHouseClient;
 
-  constructor(private readonly config: ClickHouseConfig) {
+  constructor(private readonly config: ClickHouseConfig, private readonly timeoutMs: number = 30000) {
     const protocol = config.ssl ? 'https' : 'http';
     this.client = createClient({
       url: `${protocol}://${config.host}:${config.port}`,
@@ -32,11 +32,26 @@ export class ClickHouseEngine implements QueryEngine {
   }
 
   async run(sql: string, options?: RunOptions): Promise<QueryResult> {
-    const result = await this.client.query({ query: sql, format: 'JSONEachRow' });
-    const rows = await result.json<Record<string, unknown>>();
-    const arr = Array.isArray(rows) ? rows : [];
-    const limited = options?.maxRows ? arr.slice(0, options.maxRows) : arr;
-    return toQueryResult(limited);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const queryPromise = (async () => {
+        const result = await this.client.query({ query: sql, format: 'JSONEachRow' });
+        const rows = await result.json<Record<string, unknown>>();
+        return Array.isArray(rows) ? rows : [];
+      })();
+      const rows = await Promise.race([
+        queryPromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`ClickHouse query timed out after ${this.timeoutMs}ms`)), this.timeoutMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+      const arr = rows as Array<Record<string, unknown>>;
+      const limited = options?.maxRows ? arr.slice(0, options.maxRows) : arr;
+      return toQueryResult(limited);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTables(): Promise<TableInfo[]> {

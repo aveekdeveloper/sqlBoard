@@ -22,7 +22,7 @@ export class SnowflakeEngine implements QueryEngine {
   private conn: snowflake.Connection | null = null;
   private ready: Promise<void> | null = null;
 
-  constructor(private readonly config: SnowflakeConfig) {
+  constructor(private readonly config: SnowflakeConfig, private readonly timeoutMs: number = 30000) {
     snowflake.configure({ logLevel: 'ERROR', logFilePath: undefined, additionalLogToConsole: false });
   }
 
@@ -68,9 +68,20 @@ export class SnowflakeEngine implements QueryEngine {
   }
 
   async run(sql: string, options?: RunOptions): Promise<QueryResult> {
-    const rows = await this.execute(sql);
-    const limited = options?.maxRows ? rows.slice(0, options.maxRows) : rows;
-    return toQueryResult(limited);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const rows = await Promise.race([
+        this.execute(sql),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Snowflake query timed out after ${this.timeoutMs}ms`)), this.timeoutMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+      const limited = options?.maxRows ? rows.slice(0, options.maxRows) : rows;
+      return toQueryResult(limited);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTables(): Promise<TableInfo[]> {
