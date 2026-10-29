@@ -188,7 +188,7 @@ export default function Dashboards() {
                 type="submit"
                 className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
               >
-                + Add
+                + New tag
               </button>
             </form>
           )}
