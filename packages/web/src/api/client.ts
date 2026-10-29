@@ -15,6 +15,7 @@ const BASE = '';
 export type DashboardDetailDto = DashboardDto & {
   items: DashboardItemDto[];
   latestVersion: number;
+  tags?: string[];
 };
 export type DashboardWithVersion = DashboardDetailDto & { version: DashboardVersionDto };
 export type DashboardVersionSummary = DashboardVersionDto & { codeText: string };
@@ -210,7 +211,7 @@ export const api = {
     get: (id: number) => request<DashboardDetailDto>(`/api/dashboards/${id}`),
     create: (body: { name: string; description?: string }) =>
       request<DashboardDto>('/api/dashboards', { method: 'POST', body: JSON.stringify(body) }),
-    update: (id: number, body: { name?: string; description?: string | null }) =>
+    update: (id: number, body: { name?: string; description?: string | null; tags?: string[] }) =>
       request<DashboardDetailDto>(`/api/dashboards/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
