@@ -533,7 +533,7 @@ export default function SqlWorkbench() {
 -- @groupby: column    -- @stack: true | false | name
 -- @title: Title       -- @theme: powerbi-light | nyt | economist
 -- @rotate: 45          -- @xRotate: 45   -- @yRotate: 0
--- @semantic: col: Type, other: Type   (e.g. vehicles_sold: Amount, country: Country)
+-- @semantic: col: Type, other: Type   (e.g. revenue: Amount, region: Category)
 --   Types: Date, Month, Country, State, City, Category, Quantity, Amount, Price,
 --          Percentage, Count, ID, Name, Status, Number, Unknown (and more)
 -- @flint: {"chart_spec":{"title":"Custom"}}
