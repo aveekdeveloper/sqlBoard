@@ -52,7 +52,7 @@ export interface ManifestDiagnostic {
 const BLOCK_LINE = /^--\s*@block:\s*(.*?)\s*$/;
 const FILTER_LINE = /^--\s*@filter:\s*(.*?)\s*$/;
 const ANNOTATION_LINE = /^--\s*@([a-zA-Z0-9_]+):\s*(.*?)\s*$/;
-const MANIFEST_KEYS = new Set(['type', 'layout', 'connection', 'block']);
+const MANIFEST_KEYS = new Set(['type', 'layout', 'connection', 'block', 'timeformat']);
 const TRUTHY = new Set(['true', 'yes', '1', 'on']);
 
 const DEFAULT_LAYOUT: Record<DashboardBlockType, Layout> = {
@@ -171,6 +171,21 @@ function tableConfig(annotations: Record<string, string>): Record<string, unknow
   return config;
 }
 
+function chartConfig(annotations: Record<string, string>): Record<string, unknown> | null {
+  const config: Record<string, unknown> = {};
+  if (annotations.timeformat || annotations.timeFormat) {
+    config.timeFormat = (annotations.timeformat ?? annotations.timeFormat).trim();
+  }
+  // Also expose x/y format if present (mirrors styleAxes SQL annotations).
+  if (annotations.xformat || annotations.xFormat) {
+    config.xFormat = (annotations.xformat ?? annotations.xFormat).trim();
+  }
+  if (annotations.yformat || annotations.yFormat) {
+    config.yFormat = (annotations.yformat ?? annotations.yFormat).trim();
+  }
+  return Object.keys(config).length > 0 ? config : null;
+}
+
 function inferType(annotations: Record<string, string>, body: string): DashboardBlockType {
   const explicit = annotations.type?.trim().toLowerCase();
   if (explicit === 'chart' || explicit === 'metric' || explicit === 'table' || explicit === 'text') {
@@ -190,6 +205,7 @@ function configFor(
   if (type === 'metric') return metricConfig(annotations);
   if (type === 'table') return tableConfig(annotations);
   if (type === 'text') return { markdown };
+  if (type === 'chart') return chartConfig(annotations);
   return null;
 }
 
@@ -234,6 +250,12 @@ function configAnnotations(type: DashboardBlockType, config: Record<string, unkn
       );
     }
     if (config.rowNumbers !== undefined) push('rowNumbers', config.rowNumbers);
+  }
+
+  if (type === 'chart') {
+    push('timeFormat', config.timeFormat);
+    push('xFormat', config.xFormat);
+    push('yFormat', config.yFormat);
   }
 
   return lines;

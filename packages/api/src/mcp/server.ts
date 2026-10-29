@@ -4,6 +4,13 @@ import type { DrizzleDb } from '../db/client.js';
 import { getMcpContext, setMcpContext } from './auth.js';
 import { currentTenant } from '../core/tenancy.js';
 import { connections, dashboards, savedQueries, tenants, users } from '../db/schema.js';
+import {
+  applyDashboardState,
+  dashboardResponse,
+  insertVersion,
+  readDashboard,
+} from '../core/dashboard-service.js';
+import { ApplyDashboardStateSchema, CommitDashboardSchema } from '@sqlboard/shared';
 import { eq } from 'drizzle-orm';
 import { EngineFactory } from '../engines/factory.js';
 import { QueryCache } from '../cache/query-cache.js';
@@ -161,6 +168,65 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const now = new Date().toISOString();
       const [inserted] = await deps.db.insert(dashboards).values({ name, description: description ?? null, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning();
       return { content: [{ type: 'text', text: JSON.stringify({ id: inserted.id, name: inserted.name }, null, 2) }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
+    }
+  });
+
+  // --- Dashboard state tools (member+) ---
+
+  server.tool('apply_dashboard_state', 'Replace a dashboard blocks and optionally name/description/filters/theme/colors, recording a new version. Requires member role.', {
+    id: z.number().int().describe('Dashboard ID'),
+    name: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+    filters: z.array(z.record(z.unknown())).optional(),
+    theme: z.string().optional(),
+    colors: z.array(z.string()).optional(),
+    items: z.array(z.object({
+      title: z.string().min(1),
+      sql: z.string(),
+      connectionId: z.number().int(),
+      blockType: z.enum(['chart', 'metric', 'table', 'text']),
+      savedQueryId: z.number().int().nullable().optional(),
+      config: z.record(z.unknown()).optional(),
+      layout: z.object({
+        x: z.number().int().min(0),
+        y: z.number().int().min(0),
+        w: z.number().int().min(1).max(12),
+        h: z.number().int().min(1).max(60),
+      }),
+    })),
+    message: z.string().optional(),
+    kind: z.enum(['manual', 'apply', 'restore']).default('apply'),
+    baseVersion: z.number().int().nonnegative().optional(),
+  }, async (args: any, extra: any) => {
+    const ctx = getMcpContext(extra?.sessionId);
+    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    try {
+      await readDashboard(deps.db, args.id, ctx.tenant.id);
+      const parsed = ApplyDashboardStateSchema.safeParse(args);
+      if (!parsed.success) return { content: [{ type: 'text', text: `Invalid dashboard state: ${JSON.stringify(parsed.error.flatten())}` }], isError: true };
+      const { dashboard, version } = await applyDashboardState(deps.db, args.id, parsed.data, ctx.user.id, ctx.tenant.id);
+      return { content: [{ type: 'text', text: JSON.stringify({ ...dashboard, version }, null, 2) }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
+    }
+  });
+
+  server.tool('commit_dashboard_version', 'Commit the current dashboard state as a new manual version. Requires member role.', {
+    id: z.number().int().describe('Dashboard ID'),
+    message: z.string().min(1).max(200),
+    baseVersion: z.number().int().nonnegative().optional(),
+  }, async ({ id, message, baseVersion }, extra) => {
+    const ctx = getMcpContext(extra?.sessionId);
+    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    try {
+      const { snapshot } = await readDashboard(deps.db, id, ctx.tenant.id);
+      const parsed = CommitDashboardSchema.safeParse({ message, baseVersion });
+      if (!parsed.success) return { content: [{ type: 'text', text: `Invalid commit: ${JSON.stringify(parsed.error.flatten())}` }], isError: true };
+      await (await import('../core/dashboard-service.js')).assertBaseVersion(deps.db, id, parsed.data.baseVersion);
+      const version = await insertVersion(deps.db, id, snapshot, parsed.data.message, 'manual', ctx.user.id);
+      return { content: [{ type: 'text', text: JSON.stringify(version, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
     }

@@ -1,12 +1,13 @@
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Connections from './pages/Connections.js';
 import SqlWorkbench from './pages/SqlWorkbench.js';
 import Dashboards from './pages/Dashboards.js';
 import DashboardDetail from './pages/DashboardDetail.js';
 import SavedQueries from './pages/SavedQueries.js';
 import Settings from './pages/Settings.js';
-import { setStoredUser, setTenant } from './api/client.js';
+import { getTenant, setStoredUser, setTenant } from './api/client.js';
+import { api } from './api/client.js';
 import { useAuth } from './auth.js';
 
 function getToken(): string | null {
@@ -31,7 +32,7 @@ const NAV_ITEMS = [
 function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [tenant, setTenant] = useState('');
+  const [tenant, setTenant] = useState(() => new URLSearchParams(window.location.search).get('tenant') || '');
   const [error, setError] = useState('');
   const expired = new URLSearchParams(window.location.search).get('expired') === '1';
 
@@ -109,6 +110,88 @@ function Login() {
   );
 }
 
+function TenantSwitcher({ role }: { role: string | null }) {
+  const [current, setCurrent] = useState<string>(() => getTenant() || 'default');
+  const [tenants, setTenants] = useState<Array<{ slug: string; name: string }>>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (role !== 'admin') return;
+    let cancelled = false;
+    api.tenants
+      .list()
+      .then((rows) => {
+        if (cancelled) return;
+        setTenants(rows.map((r: any) => ({ slug: r.slug, name: r.name })));
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
+
+  function switchTo(slug: string) {
+    if (!slug || slug === current) return;
+    setTenant({ slug });
+    setStoredUser(null);
+    setToken(null);
+    window.location.href = `/login?tenant=${encodeURIComponent(slug)}`;
+  }
+
+  const options = tenants.length > 0 ? tenants : [{ slug: current, name: current }];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-muted hover:text-ink"
+        title="Switch tenant"
+      >
+        <span className="text-[10px] uppercase tracking-[0.08em] text-ink-faint">tenant</span>
+        <span className="text-ink">{current}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-line bg-surface p-2 shadow-card">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+            Switch tenant
+          </div>
+          {options.map((t) => (
+            <button
+              key={t.slug}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                switchTo(t.slug);
+              }}
+              className={`block w-full rounded px-2 py-1 text-left text-[12px] hover:bg-paper ${
+                t.slug === current ? 'font-semibold text-ink' : 'text-ink-muted'
+              }`}
+            >
+              {t.name} ({t.slug})
+            </button>
+          ))}
+          <div className="mt-2 border-t border-line pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                const slug = window.prompt('Tenant slug');
+                if (slug) switchTo(slug.trim());
+              }}
+              className="w-full rounded px-2 py-1 text-left text-[12px] text-ink-muted hover:bg-paper"
+            >
+              Other…
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   const token = getToken();
   const location = useLocation();
@@ -145,6 +228,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         ))}
         <div className="ml-auto flex items-center gap-2">
+          <TenantSwitcher role={role} />
           {user?.email && (
             <span className="hidden text-[11.5px] text-ink-faint lg:inline">{user.email}</span>
           )}
@@ -162,12 +246,15 @@ function Shell({ children }: { children: React.ReactNode }) {
       {!isDashboardDetail && (
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-line bg-surface">
           <span className="font-semibold text-ink">sqlboard</span>
-          <button
-            onClick={signOut}
-            className="text-sm text-ink-muted"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-2">
+            <TenantSwitcher role={role} />
+            <button
+              onClick={signOut}
+              className="text-sm text-ink-muted"
+            >
+              Sign out
+            </button>
+          </div>
         </header>
       )}
 

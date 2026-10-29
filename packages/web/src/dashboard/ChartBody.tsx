@@ -43,15 +43,60 @@ function formatNumber(value: number, format: string): string {
   return value.toFixed(2);
 }
 
-function formatDate(value: unknown): string {
-  if (typeof value !== 'string') return String(value ?? '');
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return value;
+function formatDate(value: unknown, pattern?: string): string {
+  if (typeof value !== 'string' && !(value instanceof Date)) return String(value ?? '');
+  const d = new Date(value as any);
+  if (isNaN(d.getTime())) return String(value ?? '');
+  if (pattern && pattern.trim()) {
+    const p = pattern.trim();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const day = d.getDate();
+    const hour = d.getHours();
+    const minute = d.getMinutes();
+    const second = d.getSeconds();
+    const shortMonth = d.toLocaleString('en', { month: 'short' });
+    const longMonth = d.toLocaleString('en', { month: 'long' });
+    if (p.includes('%')) {
+      const tokens: Record<string, string> = {
+        '%Y': String(year),
+        '%y': String(year).slice(-2),
+        '%m': pad(month + 1),
+        '%-m': String(month + 1),
+        '%b': shortMonth,
+        '%B': longMonth,
+        '%d': pad(day),
+        '%-d': String(day),
+        '%e': String(day),
+        '%H': pad(hour),
+        '%M': pad(minute),
+        '%S': pad(second),
+      };
+      return p.replace(/%[A-Za-z-]+/g, (tok) => tokens[tok] ?? tok);
+    }
+    const replacements: Array<[RegExp, string]> = [
+      [/YYYY/g, String(year)],
+      [/YY/g, String(year).slice(-2)],
+      [/MMMM/g, longMonth],
+      [/MMM/g, shortMonth],
+      [/MM/g, pad(month + 1)],
+      [/M/g, String(month + 1)],
+      [/DD/g, pad(day)],
+      [/D/g, String(day)],
+      [/HH/g, pad(hour)],
+      [/mm/g, pad(minute)],
+      [/ss/g, pad(second)],
+    ];
+    let out = p;
+    for (const [re, val] of replacements) out = out.replace(re, val);
+    return out;
+  }
   const month = d.toLocaleString('en', { month: 'short' });
   const year = d.getFullYear();
   const day = d.getDate();
-  if (/^\d{4}-\d{2}$/.test(value)) return `${month} ${year}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${month} ${day}`;
+  if (typeof value === 'string' && /^\d{4}-\d{2}$/.test(value)) return `${month} ${year}`;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return `${month} ${day}`;
   return `${month} ${day}, ${year}`;
 }
 
@@ -60,13 +105,18 @@ function isDateLike(val: unknown): boolean {
   return /^\d{4}-\d{2}(-\d{2})?/.test(val) || (!isNaN(Date.parse(val)) && val.includes('-'));
 }
 
-export function styleAxes(option: Record<string, unknown>, sql?: string): Record<string, unknown> {
+export function styleAxes(
+  option: Record<string, unknown>,
+  sql?: string,
+  overrides?: { timeFormat?: string; xFormat?: string; yFormat?: string },
+): Record<string, unknown> {
   const annotations = parseAnnotations(sql || '');
-  const xFormat = (annotations.xformat || annotations.xFormat || 'auto').toLowerCase();
-  const yFormat = (annotations.yformat || annotations.yFormat || 'auto').toLowerCase();
+  const xFormat = (overrides?.xFormat ?? annotations.xformat ?? annotations.xFormat ?? 'auto').toLowerCase();
+  const yFormat = (overrides?.yFormat ?? annotations.yformat ?? annotations.yFormat ?? 'auto').toLowerCase();
+  const timeFormat = overrides?.timeFormat ?? annotations.timeformat ?? annotations.timeFormat;
   const rotateOverride = annotations.rotate ? Number(annotations.rotate) : null;
 
-  const styleAxis = (axis: unknown, format: string) => {
+  const styleAxis = (axis: unknown, format: string, tf?: string) => {
     if (!axis || typeof axis !== 'object' || Array.isArray(axis)) return axis;
     const a = axis as Record<string, unknown>;
     const labels = Array.isArray(a.data) ? a.data : [];
@@ -84,9 +134,12 @@ export function styleAxes(option: Record<string, unknown>, sql?: string): Record
         interval: 'auto',
         hideOverlap: true,
         formatter: (val: unknown) => {
-          if (resolvedFormat === 'date') return formatDate(val);
+          if (resolvedFormat === 'date') return formatDate(val, tf);
           if (typeof val === 'number') return formatNumber(val, resolvedFormat);
-          if (isDateLike(val)) return formatDate(val);
+          if (isDateLike(val)) {
+            if (tf) return formatDate(val, tf);
+            return formatDate(val);
+          }
           return String(val ?? '');
         },
       },
@@ -94,11 +147,11 @@ export function styleAxes(option: Record<string, unknown>, sql?: string): Record
   };
 
   const xAxis = Array.isArray(option.xAxis)
-    ? option.xAxis.map((a) => styleAxis(a, xFormat))
-    : styleAxis(option.xAxis, xFormat);
+    ? option.xAxis.map((a) => styleAxis(a, xFormat, timeFormat))
+    : styleAxis(option.xAxis, xFormat, timeFormat);
   const yAxis = Array.isArray(option.yAxis)
-    ? option.yAxis.map((a) => styleAxis(a, yFormat))
-    : styleAxis(option.yAxis, yFormat);
+    ? option.yAxis.map((a) => styleAxis(a, yFormat, timeFormat))
+    : styleAxis(option.yAxis, yFormat, timeFormat);
 
   const xRotated = Array.isArray(xAxis)
     ? xAxis.some((a: any) => (a?.axisLabel?.rotate ?? 0) > 0)
@@ -178,7 +231,11 @@ function styleTooltip(tooltip: unknown): unknown {
   };
 }
 
-function buildOption(raw: Record<string, unknown>, sql?: string): EChartsOption {
+function buildOption(
+  raw: Record<string, unknown>,
+  sql?: string,
+  overrides?: { timeFormat?: string; xFormat?: string; yFormat?: string },
+): EChartsOption {
   const {
     title: _title,
     subtitle: _subtitle,
@@ -230,7 +287,7 @@ function buildOption(raw: Record<string, unknown>, sql?: string): EChartsOption 
         },
       },
     ],
-  } as Record<string, unknown>, sql), sql);
+  } as Record<string, unknown>, sql), sql, overrides);
 
   return styled as EChartsOption;
 }
@@ -248,8 +305,13 @@ export default function ChartBody({
 
   const option = useMemo(() => {
     if (!data?.option) return null;
-    return buildOption(data.option, item.sql);
-  }, [data, item.sql]);
+    const cfg = (item.config ?? {}) as Record<string, unknown>;
+    return buildOption(data.option, item.sql, {
+      timeFormat: typeof cfg.timeFormat === 'string' ? cfg.timeFormat : undefined,
+      xFormat: typeof cfg.xFormat === 'string' ? cfg.xFormat : undefined,
+      yFormat: typeof cfg.yFormat === 'string' ? cfg.yFormat : undefined,
+    });
+  }, [data, item.sql, item.config]);
 
   useEffect(() => {
     const element = containerRef.current;

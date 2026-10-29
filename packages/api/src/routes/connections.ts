@@ -23,14 +23,23 @@ import {
   CreateDashboardItemSchema,
   DashboardLayoutUpdateSchema,
   RunQueryRequestSchema,
-  serializeDashboardManifest,
   UpdateConnectionRequestSchema,
   UpdateDashboardItemSchema,
   UpdateDashboardSchema,
-  type ManifestDashboard,
 } from '@sqlboard/shared';
 import { QueryCache } from '../cache/query-cache.js';
 import { currentTenant } from '../core/tenancy.js';
+import {
+  applyDashboardState,
+  applySnapshot,
+  assertBaseVersion,
+  dashboardResponse,
+  insertVersion,
+  readDashboard,
+  touchDashboard,
+  type DashboardSnapshot,
+  type DashboardVersionKind,
+} from '../core/dashboard-service.js';
 
 async function syncTags(
   db: DrizzleDb,
@@ -555,8 +564,6 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
   });
 }
 
-type DashboardSnapshot = ManifestDashboard;
-
 /**
  * sqlboard extends sqlFlint with a custom palette annotation:
  *
@@ -574,8 +581,8 @@ export function colorsFromAnnotations(sql: string): string[] {
     .filter((value: any) => /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value));
 }
 
-interface DashboardVersionKind {
-  kind: 'manual' | 'apply' | 'restore';
+function authorIdFrom(request: { user?: { id: number } }): number | null {
+  return request.user?.id ?? null;
 }
 
 function parseConfig(raw: string | null): Record<string, unknown> | null {
@@ -585,190 +592,6 @@ function parseConfig(raw: string | null): Record<string, unknown> | null {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
   } catch {
     return null;
-  }
-}
-
-async function readDashboard(deps: RouteDeps, id: number): Promise<{
-  row: typeof dashboards.$inferSelect;
-  snapshot: DashboardSnapshot;
-}> {
-  const [row] = await deps.db.select().from(dashboards).where(eq(dashboards.id, id));
-  if (!row) throw notFound(`Dashboard ${id} not found`);
-  const items = await deps.db
-    .select()
-    .from(dashboardItems)
-    .where(eq(dashboardItems.dashboardId, id))
-
-  return {
-    row,
-    snapshot: {
-      name: row.name,
-      description: row.description,
-      filters: row.filtersJson ? JSON.parse(row.filtersJson) : [],
-      theme: row.theme ?? undefined,
-      colors: row.colorsJson ? JSON.parse(row.colorsJson) : undefined,
-      items: items.map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        sql: item.sql,
-        connectionId: item.connectionId,
-        savedQueryId: item.savedQueryId ?? null,
-        blockType: item.blockType as DashboardSnapshot['items'][number]['blockType'],
-        config: parseConfig(item.configJson),
-        layout: JSON.parse(item.layoutJson),
-      })),
-    },
-  };
-}
-
-async function dashboardResponse(deps: RouteDeps, id: number) {
-  const { row, snapshot } = await readDashboard(deps, id);
-  const latestVersion = (
-    await deps.db
-      .select({ version: dashboardVersions.version })
-      .from(dashboardVersions)
-      .where(eq(dashboardVersions.dashboardId, id))
-      
-  ).reduce((max: any, entry: any) => Math.max(max, entry.version), 0);
-
-  // Attach tags
-  const dashTags = await deps.db.select().from(dashboardTags).where(eq(dashboardTags.dashboardId, id));
-  const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, row.tenantId));
-  const tagNames = dashTags.map((a: any) => allTags.find((t: any) => t.id === a.tagId)?.name).filter(Boolean) as string[];
-
-  return {
-    id: row.id,
-    name: snapshot.name,
-    description: snapshot.description,
-    tags: tagNames,
-    filters: snapshot.filters ?? [],
-    theme: snapshot.theme,
-    colors: snapshot.colors,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    latestVersion,
-    items: snapshot.items.map((item: any) => ({
-      id: item.id,
-      dashboardId: row.id,
-      title: item.title,
-      sql: item.sql,
-      connectionId: item.connectionId,
-      savedQueryId: item.savedQueryId ?? null,
-      blockType: item.blockType,
-      config: item.config,
-      layout: item.layout,
-      createdAt: row.createdAt,
-    })),
-  };
-}
-
-async function serializeSnapshot(deps: RouteDeps, snapshot: DashboardSnapshot): Promise<string> {
-  const connectionList = await deps.db
-    .select({ id: connections.id, name: connections.name })
-    .from(connections)
-  return serializeDashboardManifest(snapshot, connectionList);
-}
-
-function authorIdFrom(request: { user?: { id: number } }): number | null {
-  return request.user?.id ?? null;
-}
-
-async function latestDashboardVersion(deps: RouteDeps, dashboardId: number): Promise<number> {
-  return (
-    await deps.db
-      .select({ version: dashboardVersions.version })
-      .from(dashboardVersions)
-      .where(eq(dashboardVersions.dashboardId, dashboardId))
-      
-  ).reduce((max: any, row: any) => Math.max(max, row.version), 0);
-}
-
-async function assertBaseVersion(deps: RouteDeps, dashboardId: number, baseVersion?: number): Promise<void> {
-  if (baseVersion === undefined) return;
-  const latest = await latestDashboardVersion(deps, dashboardId);
-  if (baseVersion !== latest) {
-    throw new ApiError(
-      409,
-      'VERSION_CONFLICT',
-      `Dashboard is at v${latest}, but the request expected v${baseVersion}. Reload and retry.`,
-    );
-  }
-}
-
-async function insertVersion(
-  deps: RouteDeps,
-  dashboardId: number,
-  snapshot: DashboardSnapshot,
-  message: string | null,
-  kind: DashboardVersionKind['kind'],
-  authorId: number | null,
-) {
-  const latest = await latestDashboardVersion(deps, dashboardId);
-  const version = latest + 1;
-  const now = new Date().toISOString();
-
-  const [inserted] = await deps.db
-    .insert(dashboardVersions)
-    .values({
-      dashboardId,
-      version,
-      parentVersion: latest > 0 ? latest : null,
-      message,
-      authorId,
-      kind,
-      snapshotJson: JSON.stringify(snapshot),
-      codeText: await serializeSnapshot(deps, snapshot),
-      createdAt: now,
-    })
-    .returning()
-  return {
-    id: inserted.id,
-    dashboardId: inserted.dashboardId,
-    version: inserted.version,
-    parentVersion: inserted.parentVersion,
-    message: inserted.message,
-    authorId: inserted.authorId,
-    kind: inserted.kind as DashboardVersionKind['kind'],
-    createdAt: inserted.createdAt,
-  };
-}
-
-async function touchDashboard(deps: RouteDeps, id: number): Promise<void> {
-  await deps.db
-    .update(dashboards)
-    .set({ updatedAt: new Date().toISOString() })
-    .where(eq(dashboards.id, id));
-}
-
-async function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSnapshot): Promise<void> {
-  const now = new Date().toISOString();
-  await deps.db
-    .update(dashboards)
-    .set({
-      name: snapshot.name,
-      description: snapshot.description,
-      filtersJson: JSON.stringify(snapshot.filters ?? []),
-      theme: snapshot.theme ?? null,
-      colorsJson: snapshot.colors ? JSON.stringify(snapshot.colors) : null,
-      updatedAt: now,
-    })
-    .where(eq(dashboards.id, id))
-  await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, id));
-
-  for (const item of snapshot.items) {
-    await deps.db
-      .insert(dashboardItems)
-      .values({
-        dashboardId: id,
-        title: item.title,
-        sql: item.sql,
-        connectionId: item.connectionId,
-        savedQueryId: item.savedQueryId ?? null,
-        blockType: item.blockType,
-        configJson: item.config ? JSON.stringify(item.config) : null,
-        layoutJson: JSON.stringify(item.layout),
-        createdAt: now,
-      })
   }
 }
 
@@ -855,7 +678,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     }
 
     const version = await insertVersion(
-      deps,
+      deps.db,
       inserted.id,
       { name: inserted.name, description: inserted.description, filters: [], items: [] },
       'Dashboard created',
@@ -879,7 +702,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const numericId = Number(id);
     const parsed = UpdateDashboardSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard update', parsed.error.flatten());
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
 
     const patch: Partial<typeof dashboards.$inferInsert> = {
       updatedAt: new Date().toISOString(),
@@ -896,7 +719,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       await syncTags(deps.db, 'dashboard', numericId, parsed.data.tags, tenant.id);
     }
 
-    return await dashboardResponse(deps, numericId);
+    return await dashboardResponse(deps.db, numericId);
   });
 
   app.get('/api/dashboards/:id', async (request: any) => {
@@ -906,13 +729,13 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const tenant = currentTenant();
     const rows = await deps.db.select().from(dashboards).where(eq(dashboards.id, numericId));
     if (rows.length === 0 || rows[0].tenantId !== tenant.id) throw notFound(`Dashboard ${id} not found`);
-    return await dashboardResponse(deps, numericId);
+    return await dashboardResponse(deps.db, numericId);
   });
 
   app.post('/api/dashboards/:id/items', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
 
     const parsed = CreateDashboardItemSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard item', parsed.error.flatten());
@@ -931,7 +754,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         createdAt: now,
       })
       .returning()
-    await touchDashboard(deps, numericId);
+    await touchDashboard(deps.db, numericId);
 
     reply.code(201);
     return {
@@ -977,7 +800,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         .update(dashboardItems)
         .set(patch)
         .where(eq(dashboardItems.id, numericItemId))
-      await touchDashboard(deps, numericId);
+      await touchDashboard(deps.db, numericId);
     }
 
     const updated = await deps.db
@@ -1001,7 +824,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.put('/api/dashboards/:id/layout', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     const parsed = DashboardLayoutUpdateSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid layout update', parsed.error.flatten());
 
@@ -1016,50 +839,24 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         .set({ layoutJson: JSON.stringify(entry.layout) })
         .where(eq(dashboardItems.id, entry.id))
     }
-    await touchDashboard(deps, numericId);
-    return await dashboardResponse(deps, numericId);
+    await touchDashboard(deps.db, numericId);
+    return await dashboardResponse(deps.db, numericId);
   });
 
   app.put('/api/dashboards/:id/state', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     const parsed = ApplyDashboardStateSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid dashboard state', parsed.error.flatten());
 
-    await assertBaseVersion(deps, numericId, parsed.data.baseVersion);
-
-    const current = (await readDashboard(deps, numericId)).snapshot;
-    const snapshot: DashboardSnapshot = {
-      name: parsed.data.name ?? current.name,
-      description:
-        parsed.data.description === undefined ? current.description : parsed.data.description,
-      filters: current.filters ?? [],
-      theme: parsed.data.theme === undefined ? current.theme : parsed.data.theme,
-      colors: parsed.data.colors === undefined ? current.colors : parsed.data.colors,
-      items: parsed.data.items.map((item: any) => ({
-        title: item.title,
-        sql: item.sql,
-        connectionId: item.connectionId,
-        savedQueryId: item.savedQueryId ?? null,
-        blockType: item.blockType,
-        config: item.config ?? null,
-        layout: item.layout,
-      })),
-    };
-
-    await applySnapshot(deps, numericId, snapshot);
-    const version = await insertVersion(
-      deps,
+    const { dashboard, version } = await applyDashboardState(
+      deps.db,
       numericId,
-      snapshot,
-      parsed.data.message ?? 'Apply dashboard code',
-      parsed.data.kind,
+      parsed.data,
       authorIdFrom(request),
     );
-
-    const response = await dashboardResponse(deps, numericId);
-    return { ...response, version };
+    return { ...dashboard, version };
   });
 
   app.delete('/api/dashboards/:id/items/:itemId', async (request: any, reply: any) => {
@@ -1073,14 +870,14 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       throw notFound(`Dashboard item ${itemId} not found`);
     }
     await deps.db.delete(dashboardItems).where(eq(dashboardItems.id, Number(itemId)));
-    await touchDashboard(deps, numericId);
+    await touchDashboard(deps.db, numericId);
     reply.code(204);
   });
 
   app.delete('/api/dashboards/:id', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, numericId));
     await deps.db.delete(dashboardVersions).where(eq(dashboardVersions.dashboardId, numericId));
     await deps.db.delete(dashboards).where(eq(dashboards.id, numericId));
@@ -1090,7 +887,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.get('/api/dashboards/:id/versions', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     const rows = await deps.db
       .select()
       .from(dashboardVersions)
@@ -1113,7 +910,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.get('/api/dashboards/:id/versions/:version', async (request: any) => {
     const { id, version } = request.params as { id: string; version: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     const row = (await deps.db
       .select()
       .from(dashboardVersions)
@@ -1137,15 +934,15 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.post('/api/dashboards/:id/versions', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     const parsed = CommitDashboardSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid commit', parsed.error.flatten());
 
-    await assertBaseVersion(deps, numericId, parsed.data.baseVersion);
+    await assertBaseVersion(deps.db, numericId, parsed.data.baseVersion);
 
-    const snapshot = (await readDashboard(deps, numericId)).snapshot;
+    const snapshot = (await readDashboard(deps.db, numericId)).snapshot;
     const version = await insertVersion(
-      deps,
+      deps.db,
       numericId,
       snapshot,
       parsed.data.message,
@@ -1159,7 +956,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
   app.post('/api/dashboards/:id/versions/:version/restore', async (request: any) => {
     const { id, version } = request.params as { id: string; version: string };
     const numericId = Number(id);
-    await readDashboard(deps, numericId);
+    await readDashboard(deps.db, numericId);
     const row = (await deps.db
       .select()
       .from(dashboardVersions)
@@ -1168,16 +965,16 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!row) throw notFound(`Dashboard version ${version} not found`);
 
     const snapshot = JSON.parse(row.snapshotJson) as DashboardSnapshot;
-    await applySnapshot(deps, numericId, snapshot);
+    await applySnapshot(deps.db, numericId, snapshot);
     const restored = await insertVersion(
-      deps,
+      deps.db,
       numericId,
       snapshot,
       `Restored v${row.version}`,
       'restore',
       authorIdFrom(request),
     );
-    return { ...await dashboardResponse(deps, numericId), version: restored };
+    return { ...await dashboardResponse(deps.db, numericId), version: restored };
   });
 }
 

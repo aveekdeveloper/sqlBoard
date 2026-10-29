@@ -29,7 +29,7 @@ export class DuckDbEngine implements QueryEngine {
   private ready: Promise<void> | null = null;
   private writeChain: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly dbPath: string) {}
+  constructor(private readonly dbPath: string, private readonly queryTimeoutMs: number = 30000) {}
 
   private async ensureReady(): Promise<void> {
     // If we have a connection, verify it's alive
@@ -124,9 +124,36 @@ export class DuckDbEngine implements QueryEngine {
   }
 
   async run(sql: string, options?: RunOptions): Promise<QueryResult> {
-    const rows = await this.all(sql);
+    const rows = await this.allWithTimeout(sql);
     const limited = options?.maxRows ? rows.slice(0, options.maxRows) : rows;
     return toQueryResult(limited);
+  }
+
+  private async allWithTimeout(sql: string): Promise<Array<Record<string, unknown>>> {
+    if (!this.queryTimeoutMs || this.queryTimeoutMs <= 0) {
+      return this.all(sql);
+    }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.all(sql),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            // Best effort: invalidate the (possibly dead) connection so the
+            // caller is not blocked by the in-flight query. node-duckdb does not
+            // support true cancellation, so the query may continue in the
+            // background; subsequent calls open a fresh connection.
+            this.conn = null;
+            this.db = null;
+            this.ready = null;
+            reject(new Error(`DuckDB query timed out after ${this.queryTimeoutMs}ms`));
+          }, this.queryTimeoutMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTables(): Promise<TableInfo[]> {

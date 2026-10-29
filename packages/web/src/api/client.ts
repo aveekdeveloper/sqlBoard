@@ -261,6 +261,10 @@ export const api = {
     revoke: (id: number) => request<void>(`/api/tokens/${id}`, { method: 'DELETE' }),
   },
 
+  tenants: {
+    list: () => request<any[]>('/api/tenants'),
+  },
+
   tags: {
     list: () => request<any[]>('/api/tags'),
     create: (body: { name: string; color?: string }) =>

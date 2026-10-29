@@ -52,7 +52,7 @@ const READ_ONLY_POSTS = [
 
 export async function buildServer(config: SqlboardConfig): Promise<ServerContext> {
   const { client, db } = await openDatabase(config);
-  const duckDb = new DuckDbEngine(config.duckDbPath);
+  const duckDb = new DuckDbEngine(config.duckDbPath, config.queryTimeoutMs);
   const engineFactory = new EngineFactory({ config, db, duckDb });
   const cache = new QueryCache(config.cacheTtlMinutes * 60 * 1000);
 
