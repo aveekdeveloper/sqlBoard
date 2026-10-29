@@ -733,8 +733,12 @@ export default function DashboardDetail() {
                     try {
                       const res = await api.shares.create(dashboardId);
                       const url = `${window.location.origin}/share/${res.token}`;
-                      await navigator.clipboard.writeText(url);
-                      window.alert(`Share link copied:\\n${url}`);
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        window.alert(`Share link copied:\\n${url}`);
+                      } catch {
+                        window.prompt('Copy share link', url);
+                      }
                     } catch (e: any) {
                       window.alert(e?.message || 'Could not create share link.');
                     }
