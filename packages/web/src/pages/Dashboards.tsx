@@ -1,5 +1,6 @@
 import { useRef, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Copy, Download, Trash2 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -241,7 +242,7 @@ export default function Dashboards() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {paged.map((d: any) => (
-          <div key={d.id} className="rounded-xl border border-line bg-surface p-4 shadow-card">
+          <div key={d.id} className="flex flex-col rounded-xl border border-line bg-surface p-4 shadow-card">
             <a href={`/dashboards/${d.id}`} className="text-[13px] font-medium text-accent hover:underline">
               {d.name}
             </a>
@@ -296,7 +297,7 @@ export default function Dashboards() {
                 </select>
               )}
             </div>
-            <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="mt-auto flex items-center justify-between gap-2 pt-3">
               <span className="text-[10.5px] text-ink-faint">
                 {new Date(d.createdAt).toLocaleDateString()}
               </span>
@@ -316,9 +317,11 @@ export default function Dashboards() {
                       window.alert(e?.message || 'Export failed.');
                     }
                   }}
-                  className="text-[11.5px] font-medium text-ink-soft hover:text-ink"
+                  className="rounded-md p-1.5 text-ink-soft hover:bg-[#f1eee7] hover:text-ink"
+                  title="Export"
+                  aria-label="Export dashboard"
                 >
-                  Export
+                  <Download size={14} />
                 </button>
                 {canWrite && (
                   <button
@@ -330,17 +333,21 @@ export default function Dashboards() {
                         window.alert(e?.message || 'Copy failed.');
                       }
                     }}
-                    className="text-[11.5px] font-medium text-ink-soft hover:text-ink"
+                    className="rounded-md p-1.5 text-ink-soft hover:bg-[#f1eee7] hover:text-ink"
+                    title="Copy"
+                    aria-label="Copy dashboard"
                   >
-                    Copy
+                    <Copy size={14} />
                   </button>
                 )}
                 {canWrite && (
                   <button
                     onClick={() => { if (confirm('Delete this dashboard?')) deleteMutation.mutate(d.id); }}
-                    className="text-[11.5px] font-medium text-signal hover:underline"
+                    className="rounded-md p-1.5 text-signal hover:bg-signal-soft"
+                    title="Delete"
+                    aria-label="Delete dashboard"
                   >
-                    Delete
+                    <Trash2 size={14} />
                   </button>
                 )}
               </div>
