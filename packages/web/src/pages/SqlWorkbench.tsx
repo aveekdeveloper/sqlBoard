@@ -161,7 +161,15 @@ export default function SqlWorkbench() {
     }
     const spec = res.compiled?.echarts || res.echarts;
     if (spec && instanceRef.current) {
-      instanceRef.current.setOption(styleAxes(styleBars(spec as Record<string, unknown>, sqlText), sqlText), true);
+      const option = styleAxes(styleBars(spec as Record<string, unknown>, sqlText), sqlText) as Record<string, unknown>;
+      const title = res?.flint?.chart_spec?.title || res?.compiled?.title;
+      if (title) {
+        option.title = { text: String(title), left: 'center', top: 0, textStyle: { fontSize: 14, fontWeight: 600 } };
+        if (option.grid && typeof option.grid === 'object' && !Array.isArray(option.grid)) {
+          (option.grid as Record<string, unknown>).top = 36;
+        }
+      }
+      instanceRef.current.setOption(option, true);
       setTimeout(() => {
         try {
           instanceRef.current.resize();

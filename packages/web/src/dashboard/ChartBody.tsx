@@ -131,7 +131,7 @@ export function styleAxes(
       axisLabel: {
         ...(a.axisLabel as Record<string, unknown> | undefined),
         rotate,
-        interval: 'auto',
+        interval: labels.length > 0 && labels.length <= 40 ? 0 : 'auto',
         hideOverlap: true,
         formatter: (val: unknown) => {
           if (resolvedFormat === 'date') return formatDate(val, tf);
