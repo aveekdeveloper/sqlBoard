@@ -134,46 +134,44 @@ export default function Dashboards() {
           </div>
         </div>
 
-        {allTags && allTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint mr-1">Tags:</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint mr-1">Tags:</span>
+          <button
+            onClick={() => { setTagFilter([]); setPage(1); }}
+            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+              tagFilter.length === 0
+                ? 'bg-accent-soft text-accent-ink'
+                : 'bg-paper text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
+            }`}
+          >
+            All
+          </button>
+          {allTags && allTags.map((t: any) => (
             <button
-              onClick={() => { setTagFilter([]); setPage(1); }}
+              key={t.id}
+              onClick={() => toggleTag(t.name)}
               className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                tagFilter.length === 0
+                tagFilter.includes(t.name)
                   ? 'bg-accent-soft text-accent-ink'
                   : 'bg-paper text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
               }`}
+              style={tagFilter.includes(t.name) && t.color ? { backgroundColor: t.color + '20', color: t.color } : undefined}
             >
-              All
+              {t.name}
             </button>
-            {allTags.map((t: any) => (
-              <button
-                key={t.id}
-                onClick={() => toggleTag(t.name)}
-                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                  tagFilter.includes(t.name)
-                    ? 'bg-accent-soft text-accent-ink'
-                    : 'bg-paper text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
-                }`}
-                style={tagFilter.includes(t.name) && t.color ? { backgroundColor: t.color + '20', color: t.color } : undefined}
-              >
-                {t.name}
-              </button>
-            ))}
-            {canWrite && (
-              <button
-                onClick={() => {
-                  const name = window.prompt('New tag name');
-                  if (name && name.trim()) createTagMutation.mutate(name.trim());
-                }}
-                className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
-              >
-                + New tag
-              </button>
-            )}
-          </div>
-        )}
+          ))}
+          {canWrite && (
+            <button
+              onClick={() => {
+                const name = window.prompt('New tag name');
+                if (name && name.trim()) createTagMutation.mutate(name.trim());
+              }}
+              className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+            >
+              + New tag
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="text-[11.5px] text-ink-faint">
