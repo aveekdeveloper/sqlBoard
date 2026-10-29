@@ -1,4 +1,7 @@
 import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 export interface SqlboardConfig {
   host: string;
@@ -37,19 +40,24 @@ export function loadConfig(overrides?: Partial<SqlboardConfig>): SqlboardConfig 
 
   // Extract embedded credentials from URL (e.g., http://user:pass@host:port)
   // libSQL client rejects URLs with credentials, so strip them and use as auth token.
+  // Postgres URLs keep their credentials.
+  const isPostgresUrl =
+    databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://');
   let authToken = process.env.LIBSQL_AUTH_TOKEN ?? null;
-  try {
-    const parsed = new URL(databaseUrl);
-    if (parsed.username || parsed.password) {
-      if (!authToken) {
-        authToken = parsed.password || parsed.username;
+  if (!isPostgresUrl) {
+    try {
+      const parsed = new URL(databaseUrl);
+      if (parsed.username || parsed.password) {
+        if (!authToken) {
+          authToken = parsed.password || parsed.username;
+        }
+        parsed.username = '';
+        parsed.password = '';
+        databaseUrl = parsed.toString();
       }
-      parsed.username = '';
-      parsed.password = '';
-      databaseUrl = parsed.toString();
+    } catch {
+      // Not a valid URL, leave as-is
     }
-  } catch {
-    // Not a valid URL, leave as-is
   }
 
   // If the auth token is a plain password (not a JWT), generate a JWT.

@@ -33,12 +33,12 @@ function requireAdmin(request: FastifyRequest) {
 
 export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb }): void {
   // List tenants (admin only)
-  app.get('/api/tenants', async (request) => {
+  app.get('/api/tenants', async (request: any) => {
     requireAdmin(request);
-    const rows = await deps.db.select().from(tenants).all();
+    const rows = await deps.db.select().from(tenants);
     return rows
-      .filter((t) => t.status !== 'deleted')
-      .map((t) => ({
+      .filter((t: any) => t.status !== 'deleted')
+      .map((t: any) => ({
         id: t.id,
         slug: t.slug,
         name: t.name,
@@ -52,10 +52,10 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
   });
 
   // Get tenant (admin only)
-  app.get('/api/tenants/:id', async (request) => {
+  app.get('/api/tenants/:id', async (request: any) => {
     requireAdmin(request);
     const { id } = request.params as { id: string };
-    const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id)).all();
+    const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id));
     const t = rows[0];
     if (!t) throw notFound(`Tenant ${id} not found`);
     return {
@@ -72,7 +72,7 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
   });
 
   // Create tenant (admin only)
-  app.post('/api/tenants', async (request, reply) => {
+  app.post('/api/tenants', async (request: any, reply: any) => {
     requireAdmin(request);
     const parsed = CreateTenantSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid tenant payload', parsed.error.flatten());
@@ -80,14 +80,14 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
     const data = parsed.data;
 
     // Check slug uniqueness
-    const existing = await deps.db.select().from(tenants).where(eq(tenants.slug, data.slug)).all();
+    const existing = await deps.db.select().from(tenants).where(eq(tenants.slug, data.slug));
     if (existing.length > 0) {
       throw new ApiError(409, 'CONFLICT', `Tenant with slug "${data.slug}" already exists`);
     }
 
     // Check domain uniqueness if provided
     if (data.domain) {
-      const domainExisting = await deps.db.select().from(tenants).where(eq(tenants.domain, data.domain)).all();
+      const domainExisting = await deps.db.select().from(tenants).where(eq(tenants.domain, data.domain));
       if (domainExisting.length > 0) {
         throw new ApiError(409, 'CONFLICT', `Domain "${data.domain}" is already in use`);
       }
@@ -111,13 +111,13 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
     // Seed admin user for this tenant
     const salt = randomBytes(16).toString('hex');
     const hash = scryptSync(data.adminPassword, salt, 64).toString('hex');
-    const userRows = await deps.db.insert(users).values({
+    const [createdUser] = await deps.db.insert(users).values({
       email: data.adminEmail,
       passwordHash: `${salt}:${hash}`,
       role: data.adminRole,
       tenantId: id,
       createdAt: now,
-    }).returning().get();
+    }).returning();
 
     reply.code(201);
     return {
@@ -133,7 +133,7 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
         updatedAt: now,
       },
       admin: {
-        id: userRows.id,
+        id: createdUser.id,
         email: data.adminEmail,
         role: data.adminRole,
         tenantId: id,
@@ -142,13 +142,13 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
   });
 
   // Update tenant (admin only)
-  app.patch('/api/tenants/:id', async (request) => {
+  app.patch('/api/tenants/:id', async (request: any) => {
     requireAdmin(request);
     const { id } = request.params as { id: string };
     const parsed = UpdateTenantSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid tenant update', parsed.error.flatten());
 
-    const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id)).all();
+    const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id));
     const existing = rows[0];
     if (!existing) throw notFound(`Tenant ${id} not found`);
 
@@ -158,7 +158,7 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
     // Check domain uniqueness if changed
     if (data.domain !== undefined && data.domain !== existing.domain) {
       if (data.domain) {
-        const domainExisting = await deps.db.select().from(tenants).where(eq(tenants.domain, data.domain)).all();
+        const domainExisting = await deps.db.select().from(tenants).where(eq(tenants.domain, data.domain));
         if (domainExisting.length > 0) {
           throw new ApiError(409, 'CONFLICT', `Domain "${data.domain}" is already in use`);
         }
@@ -173,7 +173,7 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
 
     await deps.db.update(tenants).set(patch).where(eq(tenants.id, id));
 
-    const updated = await deps.db.select().from(tenants).where(eq(tenants.id, id)).get();
+    const [updated] = await deps.db.select().from(tenants).where(eq(tenants.id, id));
     return {
       id: updated!.id,
       slug: updated!.slug,
@@ -188,10 +188,10 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
   });
 
   // Soft delete tenant (admin only)
-  app.delete('/api/tenants/:id', async (request, reply) => {
+  app.delete('/api/tenants/:id', async (request: any, reply: any) => {
     requireAdmin(request);
     const { id } = request.params as { id: string };
-    const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id)).all();
+    const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id));
     if (rows.length === 0) throw notFound(`Tenant ${id} not found`);
 
     const now = new Date().toISOString();

@@ -41,7 +41,7 @@ export class EngineFactory {
       .select()
       .from(connections)
       .where(eq(connections.id, connectionId))
-      .all()) as ConnectionRow[];
+      ) as ConnectionRow[];
 
     const row = rows[0];
     if (!row) throw notFound(`Connection ${connectionId} not found`);

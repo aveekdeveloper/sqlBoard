@@ -25,15 +25,15 @@ export function createMcpServer(deps: McpDeps): McpServer {
 
   // --- Read tools ---
 
-  server.tool('list_connections', 'List all data connections for the current tenant.', {}, async (_args, extra) => {
+  server.tool('list_connections', 'List all data connections for the current tenant.', {}, async (_args: any, extra: any) => {
     const ctx = getMcpContext(extra?.sessionId);
-    const rows = await deps.db.select().from(connections).where(eq(connections.tenantId, ctx.tenant.id)).all();
-    return { content: [{ type: 'text', text: JSON.stringify(rows.map((r) => ({ id: r.id, name: r.name, type: r.type, createdAt: r.createdAt })), null, 2) }] };
+    const rows = await deps.db.select().from(connections).where(eq(connections.tenantId, ctx.tenant.id));
+    return { content: [{ type: 'text', text: JSON.stringify(rows.map((r: any) => ({ id: r.id, name: r.name, type: r.type, createdAt: r.createdAt })), null, 2) }] };
   });
 
   server.tool('get_connection', 'Get details of a specific connection by ID.', { id: z.number().int().describe('Connection ID') }, async ({ id }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    const rows = await deps.db.select().from(connections).where(eq(connections.id, id)).all();
+    const rows = await deps.db.select().from(connections).where(eq(connections.id, id));
     const row = rows[0];
     if (!row || row.tenantId !== ctx.tenant.id) {
       return { content: [{ type: 'text', text: `Connection ${id} not found` }], isError: true };
@@ -90,15 +90,15 @@ export function createMcpServer(deps: McpDeps): McpServer {
     }
   });
 
-  server.tool('list_saved_queries', 'List saved queries for the current tenant.', {}, async (_args, extra) => {
+  server.tool('list_saved_queries', 'List saved queries for the current tenant.', {}, async (_args: any, extra: any) => {
     const ctx = getMcpContext(extra?.sessionId);
-    const rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, ctx.tenant.id)).all();
-    return { content: [{ type: 'text', text: JSON.stringify(rows.map((r) => ({ id: r.id, name: r.name, connectionId: r.connectionId, latestVersion: r.latestVersion, updatedAt: r.updatedAt })), null, 2) }] };
+    const rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, ctx.tenant.id));
+    return { content: [{ type: 'text', text: JSON.stringify(rows.map((r: any) => ({ id: r.id, name: r.name, connectionId: r.connectionId, latestVersion: r.latestVersion, updatedAt: r.updatedAt })), null, 2) }] };
   });
 
   server.tool('get_saved_query', 'Get a saved query by ID, including its SQL.', { id: z.number().int() }, async ({ id }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    const rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.id, id)).all();
+    const rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.id, id));
     const row = rows[0];
     if (!row || row.tenantId !== ctx.tenant.id) {
       return { content: [{ type: 'text', text: `Saved query ${id} not found` }], isError: true };
@@ -106,15 +106,15 @@ export function createMcpServer(deps: McpDeps): McpServer {
     return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
   });
 
-  server.tool('list_dashboards', 'List dashboards for the current tenant.', {}, async (_args, extra) => {
+  server.tool('list_dashboards', 'List dashboards for the current tenant.', {}, async (_args: any, extra: any) => {
     const ctx = getMcpContext(extra?.sessionId);
-    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, ctx.tenant.id)).all();
-    return { content: [{ type: 'text', text: JSON.stringify(rows.map((r) => ({ id: r.id, name: r.name, description: r.description, createdAt: r.createdAt, updatedAt: r.updatedAt })), null, 2) }] };
+    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, ctx.tenant.id));
+    return { content: [{ type: 'text', text: JSON.stringify(rows.map((r: any) => ({ id: r.id, name: r.name, description: r.description, createdAt: r.createdAt, updatedAt: r.updatedAt })), null, 2) }] };
   });
 
   server.tool('get_dashboard', 'Get a dashboard by ID.', { id: z.number().int() }, async ({ id }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.id, id)).all();
+    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.id, id));
     const row = rows[0];
     if (!row || row.tenantId !== ctx.tenant.id) {
       return { content: [{ type: 'text', text: `Dashboard ${id} not found` }], isError: true };
@@ -135,7 +135,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const { encryptJson } = await import('../crypto.js');
       const configEnc = encryptJson({ ...config, name, type }, deps.secretKey);
       const now = new Date().toISOString();
-      const inserted = await deps.db.insert(connections).values({ name, type, configEnc, tenantId: ctx.tenant.id, createdAt: now }).returning().get();
+      const [inserted] = await deps.db.insert(connections).values({ name, type, configEnc, tenantId: ctx.tenant.id, createdAt: now }).returning();
       return { content: [{ type: 'text', text: JSON.stringify({ id: inserted.id, name: inserted.name, type: inserted.type }, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
@@ -147,7 +147,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
     try {
       const now = new Date().toISOString();
-      const inserted = await deps.db.insert(savedQueries).values({ name, connectionId, sql, latestVersion: 1, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning().get();
+      const [inserted] = await deps.db.insert(savedQueries).values({ name, connectionId, sql, latestVersion: 1, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning();
       return { content: [{ type: 'text', text: JSON.stringify({ id: inserted.id, name: inserted.name, connectionId: inserted.connectionId }, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
@@ -159,7 +159,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
     try {
       const now = new Date().toISOString();
-      const inserted = await deps.db.insert(dashboards).values({ name, description: description ?? null, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning().get();
+      const [inserted] = await deps.db.insert(dashboards).values({ name, description: description ?? null, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning();
       return { content: [{ type: 'text', text: JSON.stringify({ id: inserted.id, name: inserted.name }, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
@@ -168,11 +168,11 @@ export function createMcpServer(deps: McpDeps): McpServer {
 
   // --- Tenant management (admin only) ---
 
-  server.tool('list_tenants', 'List all tenants. Requires admin role.', {}, async (_args, extra) => {
+  server.tool('list_tenants', 'List all tenants. Requires admin role.', {}, async (_args: any, extra: any) => {
     const ctx = getMcpContext(extra?.sessionId);
     if (ctx.user.role !== 'admin') return { content: [{ type: 'text', text: 'Requires admin role' }], isError: true };
-    const rows = await deps.db.select().from(tenants).all();
-    return { content: [{ type: 'text', text: JSON.stringify(rows.filter((t) => t.status !== 'deleted').map((t) => ({ id: t.id, slug: t.slug, name: t.name, plan: t.plan, status: t.status })), null, 2) }] };
+    const rows = await deps.db.select().from(tenants);
+    return { content: [{ type: 'text', text: JSON.stringify(rows.filter((t: any) => t.status !== 'deleted').map((t: any) => ({ id: t.id, slug: t.slug, name: t.name, plan: t.plan, status: t.status })), null, 2) }] };
   });
 
   server.tool('create_tenant', 'Create a new tenant with an admin user. Requires admin role.', {
@@ -188,7 +188,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const { scryptSync, randomBytes } = await import('node:crypto');
       const id = randomUUID();
       const now = new Date().toISOString();
-      const existing = await deps.db.select().from(tenants).where(eq(tenants.slug, slug)).all();
+      const existing = await deps.db.select().from(tenants).where(eq(tenants.slug, slug));
       if (existing.length > 0) {
         return { content: [{ type: 'text', text: `Tenant "${slug}" already exists` }], isError: true };
       }

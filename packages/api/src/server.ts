@@ -9,7 +9,7 @@ import { openDatabase } from './db/client.js';
 import { auditLog, tenants } from './db/schema.js';
 import { DuckDbEngine } from './engines/duckdb.js';
 import { EngineFactory } from './engines/factory.js';
-import { currentTenant, normalizeHost, defaultDomains, isValidSlug, enterTenant, createTenantContext } from './core/tenancy.js';
+import { currentTenant, normalizeHost, defaultDomains, isValidSlug, runWithTenantAsync } from './core/tenancy.js';
 import {
   registerConnectionRoutes,
   registerSavedQueryRoutes,
@@ -59,7 +59,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   const app = Fastify({ logger: true });
 
   await app.register(import('@fastify/cors'), {
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : true,
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s: any) => s.trim()) : true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false,
@@ -119,89 +119,79 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
   app.get('/openapi.json', async () => app.swagger());
 
-  app.addHook('onRequest', async (request) => {
-    if (!config.tenancyEnabled) return;
-    const host = (request.headers.host as string) ?? '';
-    const normalized = normalizeHost(host);
-    const tenantHeader = (request.headers['x-tenant'] as string) ?? '';
+  // Tenant resolution. AsyncLocalStorage must be entered around `done()` so the
+  // store survives into route handlers; `enterWith` inside an async hook does not.
+  app.addHook('onRequest', (request: any, reply: any, done: (err?: Error) => void) => {
+    const resolve = async () => {
+      request.tenantResolved = !config.tenancyEnabled;
+      if (!config.tenancyEnabled) return null;
 
-    // Try to resolve tenant from header first
-    if (tenantHeader && isValidSlug(tenantHeader)) {
-      // Look up in tenant registry
-      try {
-        const rows = await db.select().from(tenants).where(eq(tenants.slug, tenantHeader)).all();
-        if (rows.length > 0) {
-          const t = rows[0];
-          if (t.status !== 'deleted') {
-            enterTenant({
-              id: t.id,
-              slug: t.slug,
-              name: t.name,
-              domain: t.domain,
-              plan: t.plan,
-              status: t.status,
-            });
-            return;
-          }
+      const tenantHeader = (request.headers['x-tenant'] as string) ?? '';
+      if (tenantHeader) {
+        if (!isValidSlug(tenantHeader)) {
+          throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
         }
-      } catch {
-        // Fall through to 404
-      }
-      // Unknown tenant → fail closed
-      // We'll handle this in preHandler by checking if tenant was resolved
-    }
-
-    // Domain-based resolution
-    const defaults = defaultDomains(config.baseDomain);
-    if (defaults.has(normalized)) return; // default tenant
-
-    // Look up by domain
-    try {
-      const rows = await db.select().from(tenants).where(eq(tenants.domain, normalized)).all();
-      if (rows.length > 0) {
+        const rows = await db.select().from(tenants).where(eq(tenants.slug, tenantHeader));
         const t = rows[0];
-        if (t.status !== 'deleted') {
-          enterTenant({
-            id: t.id,
-            slug: t.slug,
-            name: t.name,
-            domain: t.domain,
-            plan: t.plan,
-            status: t.status,
-          });
+        if (!t || t.status === 'deleted') {
+          throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
+        }
+        return {
+          id: t.id,
+          slug: t.slug,
+          name: t.name,
+          domain: t.domain,
+          plan: t.plan,
+          status: t.status,
+        };
+      }
+
+      const host = (request.headers.host as string) ?? '';
+      const normalized = normalizeHost(host);
+      if (defaultDomains(config.baseDomain).has(normalized)) {
+        request.tenantResolved = true;
+        return null;
+      }
+
+      const rows = await db.select().from(tenants).where(eq(tenants.domain, normalized));
+      const t = rows[0];
+      if (t && t.status !== 'deleted') {
+        return {
+          id: t.id,
+          slug: t.slug,
+          name: t.name,
+          domain: t.domain,
+          plan: t.plan,
+          status: t.status,
+        };
+      }
+      return null;
+    };
+
+    resolve().then(
+      (tenant) => {
+        if (!tenant) {
+          done();
           return;
         }
-      }
-    } catch {
-      // Fall through
-    }
-
-    // Unknown tenant → mark as unresolved (will be handled by preHandler)
+        request.tenantResolved = true;
+        runWithTenantAsync(tenant, async () => {
+          done();
+        });
+      },
+      (err) => done(err),
+    );
   });
 
-  app.addHook('preHandler', async (request) => {
+  app.addHook('preHandler', async (request: any) => {
     if (request.method === 'OPTIONS') return;
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/')) return;
     if (PUBLIC_PATHS.has(path)) return;
 
-    // Fail-closed: if tenancy is enabled and tenant wasn't resolved, return 404
-    if (config.tenancyEnabled) {
-      const host = (request.headers.host as string) ?? '';
-      const normalized = normalizeHost(host);
-      const defaults = defaultDomains(config.baseDomain);
-      const tenantHeader = (request.headers['x-tenant'] as string) ?? '';
-      if (!defaults.has(normalized) && !tenantHeader) {
-        // No tenant resolved from host or header → 404
-        // But we need to check if a tenant was resolved via domain lookup
-        // For now, if not in defaults and no header, we already tried domain lookup
-        // in onRequest. If currentTenant() is still default, it means lookup failed.
-        const { currentTenant } = await import('./core/tenancy.js');
-        if (currentTenant().slug === 'default' && !defaults.has(normalized)) {
-          // Only fail-closed if the host is not a default domain
-          throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
-        }
-      }
+    // Fail-closed: tenancy is enabled but no tenant could be resolved.
+    if (config.tenancyEnabled && !request.tenantResolved) {
+      throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
     }
 
     const user = await requireUser(request, db);
@@ -209,20 +199,20 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
 
     if (request.method === 'GET' || request.method === 'HEAD') return;
 
-    const selfService = SELF_SERVICE_WRITES.some((pattern) => pattern.test(path));
-    const readOnlyPost = READ_ONLY_POSTS.some((pattern) => pattern.test(path));
+    const selfService = SELF_SERVICE_WRITES.some((pattern: any) => pattern.test(path));
+    const readOnlyPost = READ_ONLY_POSTS.some((pattern: any) => pattern.test(path));
     if (readOnlyPost) return;
     if (!selfService && ROLE_RANK[user.role] < ROLE_RANK.member) {
       throw new ApiError(403, 'FORBIDDEN', 'this action requires the member role');
     }
   });
 
-  app.addHook('onResponse', async (request, reply) => {
+  app.addHook('onResponse', async (request: any, reply: any) => {
     if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return;
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/') || path.startsWith('/api/auth/')) return;
     if (reply.statusCode >= 400) return;
-    if (READ_ONLY_POSTS.some((pattern) => pattern.test(path))) return;
+    if (READ_ONLY_POSTS.some((pattern: any) => pattern.test(path))) return;
 
     const segments = path.split('/').filter(Boolean);
     try {
@@ -232,6 +222,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
           action: `${request.method} ${path}`,
           resourceType: segments[1] ?? 'unknown',
           resourceId: segments[2] ?? null,
+          tenantId: currentTenant().id,
           createdAt: new Date().toISOString(),
         });
     } catch {
@@ -284,7 +275,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
       prefix: '/',
       wildcard: false,
     });
-    app.get('/*', async (request, reply) => {
+    app.get('/*', async (request: any, reply: any) => {
       const url = request.url.split('?')[0];
       if (
         url.startsWith('/api') ||

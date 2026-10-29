@@ -39,17 +39,17 @@ async function syncTags(
   tagNames: string[],
   tenantId: string,
 ): Promise<void> {
-  const existingTags = await db.select().from(tags).where(eq(tags.tenantId, tenantId)).all();
+  const existingTags = await db.select().from(tags).where(eq(tags.tenantId, tenantId));
   const tagIds: number[] = [];
   for (const name of tagNames.slice(0, 10)) {
     const trimmed = name.trim();
     if (!trimmed) continue;
-    let tag = existingTags.find((t) => t.name.toLowerCase() === trimmed.toLowerCase());
+    let tag = existingTags.find((t: any) => t.name.toLowerCase() === trimmed.toLowerCase());
     if (!tag) {
       const now = new Date().toISOString();
       const palette = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
       const color = palette[Math.floor(Math.random() * palette.length)];
-      const inserted = await db.insert(tags).values({ name: trimmed, color, tenantId, createdAt: now }).returning().get();
+      const [inserted] = await db.insert(tags).values({ name: trimmed, color, tenantId, createdAt: now }).returning();
       tag = inserted;
       existingTags.push(tag);
     }
@@ -83,8 +83,8 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
   app.get('/api/connections', async () => {
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
-    const rows = await deps.db.select().from(connections).where(eq(connections.tenantId, tenant.id)).all();
-    return rows.map((row) => ({
+    const rows = await deps.db.select().from(connections).where(eq(connections.tenantId, tenant.id));
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       type: row.type,
@@ -93,22 +93,21 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }));
   });
 
-  app.post('/api/connections', async (request, reply) => {
+  app.post('/api/connections', async (request: any, reply: any) => {
     const parsed = CreateConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid connection payload', parsed.error.flatten());
 
-    const existing = (await deps.db.select().from(connections).where(eq(connections.tenantId, currentTenant().id)).all()).find((c) => c.name === parsed.data.name);
+    const existing = (await deps.db.select().from(connections).where(eq(connections.tenantId, currentTenant().id))).find((c: any) => c.name === parsed.data.name);
     if (existing) throw new ApiError(409, 'CONFLICT', `A connection named "${parsed.data.name}" already exists`);
 
     const { encryptJson } = await import('../crypto.js');
     const tenant = currentTenant();
     const configEnc = encryptJson(parsed.data, deps.secretKey);
     const now = new Date().toISOString();
-    const inserted = await deps.db
+    const [inserted] = await deps.db
       .insert(connections)
       .values({ name: parsed.data.name, type: parsed.data.type, configEnc, tenantId: tenant.id, createdAt: now })
       .returning()
-      .get();
     reply.code(201);
     return {
       id: inserted.id,
@@ -119,14 +118,13 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.patch('/api/connections/:id', async (request) => {
+  app.patch('/api/connections/:id', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     const rows = await deps.db
       .select()
       .from(connections)
       .where(eq(connections.id, numericId))
-      .all();
     const existing = rows[0];
     if (!existing) throw notFound(`Connection ${id} not found`);
 
@@ -147,7 +145,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const newName = parsed.data.name ?? existing.name;
     // Check name uniqueness if name changed
     if (newName !== existing.name) {
-      const dup = (await deps.db.select().from(connections).where(eq(connections.tenantId, currentTenant().id)).all()).find((c) => c.name === newName && c.id !== numericId);
+      const dup = (await deps.db.select().from(connections).where(eq(connections.tenantId, currentTenant().id))).find((c: any) => c.name === newName && c.id !== numericId);
       if (dup) throw new ApiError(409, 'CONFLICT', `A connection named "${newName}" already exists`);
     }
 
@@ -158,8 +156,6 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
       .update(connections)
       .set({ name: newName, configEnc })
       .where(eq(connections.id, numericId))
-      .run();
-
     return {
       id: numericId,
       name: newName,
@@ -169,22 +165,21 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.delete('/api/connections/:id', async (request, reply) => {
+  app.delete('/api/connections/:id', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     const rows = await deps.db
       .select()
       .from(connections)
       .where(eq(connections.id, numericId))
-      .all();
     if (rows.length === 0) throw notFound(`Connection ${id} not found`);
     await deps.engineFactory.closeConnection(numericId);
     deps.cache.clear();
-    await deps.db.delete(connections).where(eq(connections.id, numericId)).run();
+    await deps.db.delete(connections).where(eq(connections.id, numericId));
     reply.code(204);
   });
 
-  app.post('/api/connections/validate', async (request) => {
+  app.post('/api/connections/validate', async (request: any) => {
     const parsed = CreateConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid connection payload', parsed.error.flatten());
 
@@ -204,7 +199,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
   });
 
-  app.post('/api/connections/:id/test', async (request) => {
+  app.post('/api/connections/:id/test', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     try {
@@ -216,7 +211,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
   });
 
-  app.get('/api/connections/:id/tables', async (request) => {
+  app.get('/api/connections/:id/tables', async (request: any) => {
     const { id } = request.params as { id: string };
     try {
       const engine = await deps.engineFactory.forConnectionId(Number(id));
@@ -226,7 +221,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
   });
 
-  app.get('/api/connections/:id/tables/:name/preview', async (request) => {
+  app.get('/api/connections/:id/tables/:name/preview', async (request: any) => {
     const { id, name } = request.params as { id: string; name: string };
     try {
       const engine = await deps.engineFactory.forConnectionId(Number(id));
@@ -236,7 +231,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
   });
 
-  app.post('/api/connections/:id/query', async (request) => {
+  app.post('/api/connections/:id/query', async (request: any) => {
     const { id } = request.params as { id: string };
     const parsed = RunQueryRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid query payload', parsed.error.flatten());
@@ -266,7 +261,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
 }
 
 export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.get('/api/saved-queries', async (request) => {
+  app.get('/api/saved-queries', async (request: any) => {
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
     const url = new URL(request.url, 'http://localhost');
@@ -275,26 +270,26 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     const sortBy = url.searchParams.get('sortBy') || 'updatedAt';
     const sortDir = url.searchParams.get('sortDir') || 'desc';
 
-    let rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, tenant.id)).all();
+    let rows = await deps.db.select().from(savedQueries).where(eq(savedQueries.tenantId, tenant.id));
 
     // Filter by connection
     if (connectionIdParam) {
       const connId = Number(connectionIdParam);
-      rows = rows.filter((r) => r.connectionId === connId);
+      rows = rows.filter((r: any) => r.connectionId === connId);
     }
 
     // Filter by tags (OR logic)
     if (tagsParam) {
-      const tagNames = tagsParam.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const tagNames = tagsParam.split(',').map((t: any) => t.trim().toLowerCase()).filter(Boolean);
       if (tagNames.length > 0) {
-        const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
-        const matchingTagIds = allTags.filter((t) => tagNames.includes(t.name.toLowerCase())).map((t) => t.id);
+        const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id));
+        const matchingTagIds = allTags.filter((t: any) => tagNames.includes(t.name.toLowerCase())).map((t: any) => t.id);
         if (matchingTagIds.length > 0) {
-          const associations = await deps.db.select().from(savedQueryTags).all();
+          const associations = await deps.db.select().from(savedQueryTags);
           const matchingQueryIds = new Set(
-            associations.filter((a) => matchingTagIds.includes(a.tagId)).map((a) => a.savedQueryId),
+            associations.filter((a: any) => matchingTagIds.includes(a.tagId)).map((a: any) => a.savedQueryId),
           );
-          rows = rows.filter((r) => matchingQueryIds.has(r.id));
+          rows = rows.filter((r: any) => matchingQueryIds.has(r.id));
         } else {
           rows = [];
         }
@@ -302,25 +297,25 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     }
 
     // Sort
-    rows.sort((a, b) => {
+    rows.sort((a: any, b: any) => {
       let cmp = 0;
       if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
-      else if (sortBy === 'createdAt') cmp = a.createdAt.localeCompare(b.createdAt);
-      else cmp = a.updatedAt.localeCompare(b.updatedAt);
+      else if (sortBy === 'createdAt') cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      else cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
       return sortDir === 'asc' ? cmp : -cmp;
     });
 
     // Attach tags to each query
-    const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
-    const allAssociations = await deps.db.select().from(savedQueryTags).all();
+    const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id));
+    const allAssociations = await deps.db.select().from(savedQueryTags);
     const tagMap = new Map<number, string[]>();
     for (const assoc of allAssociations) {
       if (!tagMap.has(assoc.savedQueryId)) tagMap.set(assoc.savedQueryId, []);
-      const tag = allTags.find((t) => t.id === assoc.tagId);
+      const tag = allTags.find((t: any) => t.id === assoc.tagId);
       if (tag) tagMap.get(assoc.savedQueryId)!.push(tag.name);
     }
 
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       connectionId: row.connectionId,
@@ -332,13 +327,12 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     }));
   });
 
-  app.get('/api/saved-queries/:id', async (request) => {
+  app.get('/api/saved-queries/:id', async (request: any) => {
     const { id } = request.params as { id: string };
     const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
     const row = rows[0];
     return {
@@ -352,7 +346,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.post('/api/saved-queries', async (request, reply) => {
+  app.post('/api/saved-queries', async (request: any, reply: any) => {
     const parsed = z
       .object({ name: z.string().min(1), connectionId: z.number().int(), sql: z.string().min(1), tags: z.array(z.string()).max(10).optional() })
       .safeParse(request.body);
@@ -361,7 +355,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     const now = new Date().toISOString();
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
-    const inserted = await deps.db
+    const [inserted] = await deps.db
       .insert(savedQueries)
       .values({
         name: parsed.data.name,
@@ -373,7 +367,6 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         updatedAt: now,
       })
       .returning()
-      .get();
     await deps.db
       .insert(savedQueryVersions)
       .values({
@@ -386,7 +379,6 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         sql: parsed.data.sql,
         createdAt: now,
       })
-      .run();
     // Sync tags if provided
     if (parsed.data.tags && parsed.data.tags.length > 0) {
       await syncTags(deps.db, 'saved_query', inserted.id, parsed.data.tags, tenant.id);
@@ -403,7 +395,7 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.patch('/api/saved-queries/:id', async (request) => {
+  app.patch('/api/saved-queries/:id', async (request: any) => {
     const { id } = request.params as { id: string };
     const parsed = z
       .object({
@@ -420,7 +412,6 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
     const current = rows[0];
 
@@ -440,8 +431,6 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         latestVersion: changed ? (current.latestVersion ?? 0) + 1 : (current.latestVersion ?? 0),
       })
       .where(eq(savedQueries.id, Number(id)))
-      .run();
-
     // Update tags if provided
     if (parsed.data.tags !== undefined) {
       await syncTags(deps.db, 'saved_query', Number(id), parsed.data.tags, current.tenantId);
@@ -461,14 +450,12 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
           sql: nextSql,
           createdAt: now,
         })
-        .run();
     }
 
     const updated = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .get();
     if (!updated) throw notFound(`Not found`);
     return {
       id: updated.id,
@@ -481,21 +468,20 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.get('/api/saved-queries/:id/versions', async (request) => {
+  app.get('/api/saved-queries/:id/versions', async (request: any) => {
     const { id } = request.params as { id: string };
     const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
     const versions = (await deps.db
       .select()
       .from(savedQueryVersions)
       .where(eq(savedQueryVersions.savedQueryId, Number(id)))
-      .all())
-      .sort((a, b) => a.version - b.version);
-    return versions.map((v) => ({
+      )
+      .sort((a: any, b: any) => a.version - b.version);
+    return versions.map((v: any) => ({
       id: v.id,
       version: v.version,
       parentVersion: v.parentVersion,
@@ -506,20 +492,19 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     }));
   });
 
-  app.post('/api/saved-queries/:id/restore/:version', async (request) => {
+  app.post('/api/saved-queries/:id/restore/:version', async (request: any) => {
     const { id, version } = request.params as { id: string; version: string };
     const queryRows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all();
     if (queryRows.length === 0) throw notFound(`Saved query ${id} not found`);
     const versionRows = (await deps.db
       .select()
       .from(savedQueryVersions)
       .where(eq(savedQueryVersions.savedQueryId, Number(id)))
-      .all())
-      .filter((v) => v.version === Number(version));
+      )
+      .filter((v: any) => v.version === Number(version));
     if (versionRows.length === 0) throw notFound(`Version ${version} not found`);
     const target = versionRows[0];
     const current = queryRows[0];
@@ -529,7 +514,6 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
       .update(savedQueries)
       .set({ sql: target.sql, updatedAt: now, latestVersion: newVersion })
       .where(eq(savedQueries.id, Number(id)))
-      .run();
     await deps.db
       .insert(savedQueryVersions)
       .values({
@@ -542,12 +526,10 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
         sql: target.sql,
         createdAt: now,
       })
-      .run();
     const updated = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .get();
     if (!updated) throw notFound(`Not found`);
     return {
       id: updated.id,
@@ -560,16 +542,15 @@ export function registerSavedQueryRoutes(app: FastifyInstance, deps: RouteDeps):
     };
   });
 
-  app.delete('/api/saved-queries/:id', async (request, reply) => {
+  app.delete('/api/saved-queries/:id', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const rows = await deps.db
       .select()
       .from(savedQueries)
       .where(eq(savedQueries.id, Number(id)))
-      .all();
     if (rows.length === 0) throw notFound(`Saved query ${id} not found`);
-    await deps.db.delete(savedQueryVersions).where(eq(savedQueryVersions.savedQueryId, Number(id))).run();
-    await deps.db.delete(savedQueries).where(eq(savedQueries.id, Number(id))).run();
+    await deps.db.delete(savedQueryVersions).where(eq(savedQueryVersions.savedQueryId, Number(id)));
+    await deps.db.delete(savedQueries).where(eq(savedQueries.id, Number(id)));
     reply.code(204);
   });
 }
@@ -589,8 +570,8 @@ export function colorsFromAnnotations(sql: string): string[] {
   if (!match) return [];
   return match[1]
     .split(',')
-    .map((value) => value.trim())
-    .filter((value) => /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value));
+    .map((value: any) => value.trim())
+    .filter((value: any) => /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value));
 }
 
 interface DashboardVersionKind {
@@ -611,13 +592,12 @@ async function readDashboard(deps: RouteDeps, id: number): Promise<{
   row: typeof dashboards.$inferSelect;
   snapshot: DashboardSnapshot;
 }> {
-  const row = await deps.db.select().from(dashboards).where(eq(dashboards.id, id)).get();
+  const [row] = await deps.db.select().from(dashboards).where(eq(dashboards.id, id));
   if (!row) throw notFound(`Dashboard ${id} not found`);
   const items = await deps.db
     .select()
     .from(dashboardItems)
     .where(eq(dashboardItems.dashboardId, id))
-    .all();
 
   return {
     row,
@@ -627,7 +607,7 @@ async function readDashboard(deps: RouteDeps, id: number): Promise<{
       filters: row.filtersJson ? JSON.parse(row.filtersJson) : [],
       theme: row.theme ?? undefined,
       colors: row.colorsJson ? JSON.parse(row.colorsJson) : undefined,
-      items: items.map((item) => ({
+      items: items.map((item: any) => ({
         id: item.id,
         title: item.title,
         sql: item.sql,
@@ -648,13 +628,13 @@ async function dashboardResponse(deps: RouteDeps, id: number) {
       .select({ version: dashboardVersions.version })
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, id))
-      .all()
-  ).reduce((max, entry) => Math.max(max, entry.version), 0);
+      
+  ).reduce((max: any, entry: any) => Math.max(max, entry.version), 0);
 
   // Attach tags
-  const dashTags = await deps.db.select().from(dashboardTags).where(eq(dashboardTags.dashboardId, id)).all();
-  const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, row.tenantId)).all();
-  const tagNames = dashTags.map((a) => allTags.find((t) => t.id === a.tagId)?.name).filter(Boolean) as string[];
+  const dashTags = await deps.db.select().from(dashboardTags).where(eq(dashboardTags.dashboardId, id));
+  const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, row.tenantId));
+  const tagNames = dashTags.map((a: any) => allTags.find((t: any) => t.id === a.tagId)?.name).filter(Boolean) as string[];
 
   return {
     id: row.id,
@@ -667,7 +647,7 @@ async function dashboardResponse(deps: RouteDeps, id: number) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     latestVersion,
-    items: snapshot.items.map((item) => ({
+    items: snapshot.items.map((item: any) => ({
       id: item.id,
       dashboardId: row.id,
       title: item.title,
@@ -686,7 +666,6 @@ async function serializeSnapshot(deps: RouteDeps, snapshot: DashboardSnapshot): 
   const connectionList = await deps.db
     .select({ id: connections.id, name: connections.name })
     .from(connections)
-    .all();
   return serializeDashboardManifest(snapshot, connectionList);
 }
 
@@ -700,8 +679,8 @@ async function latestDashboardVersion(deps: RouteDeps, dashboardId: number): Pro
       .select({ version: dashboardVersions.version })
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, dashboardId))
-      .all()
-  ).reduce((max, row) => Math.max(max, row.version), 0);
+      
+  ).reduce((max: any, row: any) => Math.max(max, row.version), 0);
 }
 
 async function assertBaseVersion(deps: RouteDeps, dashboardId: number, baseVersion?: number): Promise<void> {
@@ -728,7 +707,7 @@ async function insertVersion(
   const version = latest + 1;
   const now = new Date().toISOString();
 
-  const inserted = await deps.db
+  const [inserted] = await deps.db
     .insert(dashboardVersions)
     .values({
       dashboardId,
@@ -742,8 +721,6 @@ async function insertVersion(
       createdAt: now,
     })
     .returning()
-    .get();
-
   return {
     id: inserted.id,
     dashboardId: inserted.dashboardId,
@@ -776,9 +753,7 @@ async function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSna
       updatedAt: now,
     })
     .where(eq(dashboards.id, id))
-    .run();
-
-  await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, id)).run();
+  await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, id));
 
   for (const item of snapshot.items) {
     await deps.db
@@ -794,12 +769,11 @@ async function applySnapshot(deps: RouteDeps, id: number, snapshot: DashboardSna
         layoutJson: JSON.stringify(item.layout),
         createdAt: now,
       })
-      .run();
   }
 }
 
 export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.get('/api/dashboards', async (request) => {
+  app.get('/api/dashboards', async (request: any) => {
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
     const url = new URL(request.url, 'http://localhost');
@@ -807,20 +781,20 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const sortBy = url.searchParams.get('sortBy') || 'updatedAt';
     const sortDir = url.searchParams.get('sortDir') || 'desc';
 
-    let rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, tenant.id)).all();
+    let rows = await deps.db.select().from(dashboards).where(eq(dashboards.tenantId, tenant.id));
 
     // Filter by tags (OR logic)
     if (tagsParam) {
-      const tagNames = tagsParam.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const tagNames = tagsParam.split(',').map((t: any) => t.trim().toLowerCase()).filter(Boolean);
       if (tagNames.length > 0) {
-        const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
-        const matchingTagIds = allTags.filter((t) => tagNames.includes(t.name.toLowerCase())).map((t) => t.id);
+        const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id));
+        const matchingTagIds = allTags.filter((t: any) => tagNames.includes(t.name.toLowerCase())).map((t: any) => t.id);
         if (matchingTagIds.length > 0) {
-          const associations = await deps.db.select().from(dashboardTags).all();
+          const associations = await deps.db.select().from(dashboardTags);
           const matchingDashIds = new Set(
-            associations.filter((a) => matchingTagIds.includes(a.tagId)).map((a) => a.dashboardId),
+            associations.filter((a: any) => matchingTagIds.includes(a.tagId)).map((a: any) => a.dashboardId),
           );
-          rows = rows.filter((r) => matchingDashIds.has(r.id));
+          rows = rows.filter((r: any) => matchingDashIds.has(r.id));
         } else {
           rows = [];
         }
@@ -828,25 +802,25 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     }
 
     // Sort
-    rows.sort((a, b) => {
+    rows.sort((a: any, b: any) => {
       let cmp = 0;
       if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
-      else if (sortBy === 'createdAt') cmp = a.createdAt.localeCompare(b.createdAt);
-      else cmp = a.updatedAt.localeCompare(b.updatedAt);
+      else if (sortBy === 'createdAt') cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      else cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
       return sortDir === 'asc' ? cmp : -cmp;
     });
 
     // Attach tags
-    const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id)).all();
-    const allAssociations = await deps.db.select().from(dashboardTags).all();
+    const allTags = await deps.db.select().from(tags).where(eq(tags.tenantId, tenant.id));
+    const allAssociations = await deps.db.select().from(dashboardTags);
     const tagMap = new Map<number, string[]>();
     for (const assoc of allAssociations) {
       if (!tagMap.has(assoc.dashboardId)) tagMap.set(assoc.dashboardId, []);
-      const tag = allTags.find((t) => t.id === assoc.tagId);
+      const tag = allTags.find((t: any) => t.id === assoc.tagId);
       if (tag) tagMap.get(assoc.dashboardId)!.push(tag.name);
     }
 
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -856,7 +830,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     }));
   });
 
-  app.post('/api/dashboards', async (request, reply) => {
+  app.post('/api/dashboards', async (request: any, reply: any) => {
     const parsed = z
       .object({ name: z.string().min(1), description: z.string().optional(), tags: z.array(z.string()).max(10).optional() })
       .safeParse(request.body);
@@ -865,7 +839,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     const now = new Date().toISOString();
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
-    const inserted = await deps.db
+    const [inserted] = await deps.db
       .insert(dashboards)
       .values({
         name: parsed.data.name,
@@ -875,8 +849,6 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         updatedAt: now,
       })
       .returning()
-      .get();
-
     // Sync tags if provided
     if (parsed.data.tags && parsed.data.tags.length > 0) {
       await syncTags(deps.db, 'dashboard', inserted.id, parsed.data.tags, tenant.id);
@@ -902,7 +874,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     };
   });
 
-  app.patch('/api/dashboards/:id', async (request) => {
+  app.patch('/api/dashboards/:id', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     const parsed = UpdateDashboardSchema.safeParse(request.body);
@@ -915,7 +887,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (parsed.data.name !== undefined) patch.name = parsed.data.name;
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
 
-    await deps.db.update(dashboards).set(patch).where(eq(dashboards.id, numericId)).run();
+    await deps.db.update(dashboards).set(patch).where(eq(dashboards.id, numericId));
 
     // Sync tags if provided
     if (parsed.data.tags !== undefined) {
@@ -927,17 +899,17 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     return await dashboardResponse(deps, numericId);
   });
 
-  app.get('/api/dashboards/:id', async (request) => {
+  app.get('/api/dashboards/:id', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     const { currentTenant } = await import('../core/tenancy.js');
     const tenant = currentTenant();
-    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.id, numericId)).all();
+    const rows = await deps.db.select().from(dashboards).where(eq(dashboards.id, numericId));
     if (rows.length === 0 || rows[0].tenantId !== tenant.id) throw notFound(`Dashboard ${id} not found`);
     return await dashboardResponse(deps, numericId);
   });
 
-  app.post('/api/dashboards/:id/items', async (request, reply) => {
+  app.post('/api/dashboards/:id/items', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -946,7 +918,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!parsed.success) throw badRequest('Invalid dashboard item', parsed.error.flatten());
 
     const now = new Date().toISOString();
-    const inserted = await deps.db
+    const [inserted] = await deps.db
       .insert(dashboardItems)
       .values({
         dashboardId: numericId,
@@ -959,7 +931,6 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         createdAt: now,
       })
       .returning()
-      .get();
     await touchDashboard(deps, numericId);
 
     reply.code(201);
@@ -976,7 +947,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     };
   });
 
-  app.patch('/api/dashboards/:id/items/:itemId', async (request) => {
+  app.patch('/api/dashboards/:id/items/:itemId', async (request: any) => {
     const { id, itemId } = request.params as { id: string; itemId: string };
     const numericId = Number(id);
     const numericItemId = Number(itemId);
@@ -984,7 +955,6 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, numericItemId))
-      .get();
     if (!existing || existing.dashboardId !== numericId) {
       throw notFound(`Dashboard item ${itemId} not found`);
     }
@@ -1007,7 +977,6 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         .update(dashboardItems)
         .set(patch)
         .where(eq(dashboardItems.id, numericItemId))
-        .run();
       await touchDashboard(deps, numericId);
     }
 
@@ -1015,7 +984,6 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, numericItemId))
-      .get();
     if (!updated) throw notFound(`Not found`);
     return {
       id: updated.id,
@@ -1030,7 +998,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     };
   });
 
-  app.put('/api/dashboards/:id/layout', async (request) => {
+  app.put('/api/dashboards/:id/layout', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -1042,19 +1010,17 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         .select({ id: dashboardItems.id, dashboardId: dashboardItems.dashboardId })
         .from(dashboardItems)
         .where(eq(dashboardItems.id, entry.id))
-        .get();
       if (!existing || existing.dashboardId !== numericId) continue;
       await deps.db
         .update(dashboardItems)
         .set({ layoutJson: JSON.stringify(entry.layout) })
         .where(eq(dashboardItems.id, entry.id))
-        .run();
     }
     await touchDashboard(deps, numericId);
     return await dashboardResponse(deps, numericId);
   });
 
-  app.put('/api/dashboards/:id/state', async (request) => {
+  app.put('/api/dashboards/:id/state', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -1071,7 +1037,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       filters: current.filters ?? [],
       theme: parsed.data.theme === undefined ? current.theme : parsed.data.theme,
       colors: parsed.data.colors === undefined ? current.colors : parsed.data.colors,
-      items: parsed.data.items.map((item) => ({
+      items: parsed.data.items.map((item: any) => ({
         title: item.title,
         sql: item.sql,
         connectionId: item.connectionId,
@@ -1096,33 +1062,32 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     return { ...response, version };
   });
 
-  app.delete('/api/dashboards/:id/items/:itemId', async (request, reply) => {
+  app.delete('/api/dashboards/:id/items/:itemId', async (request: any, reply: any) => {
     const { id, itemId } = request.params as { id: string; itemId: string };
     const numericId = Number(id);
     const rows = await deps.db
       .select()
       .from(dashboardItems)
       .where(eq(dashboardItems.id, Number(itemId)))
-      .all();
     if (rows.length === 0 || rows[0].dashboardId !== numericId) {
       throw notFound(`Dashboard item ${itemId} not found`);
     }
-    await deps.db.delete(dashboardItems).where(eq(dashboardItems.id, Number(itemId))).run();
+    await deps.db.delete(dashboardItems).where(eq(dashboardItems.id, Number(itemId)));
     await touchDashboard(deps, numericId);
     reply.code(204);
   });
 
-  app.delete('/api/dashboards/:id', async (request, reply) => {
+  app.delete('/api/dashboards/:id', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
-    await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, numericId)).run();
-    await deps.db.delete(dashboardVersions).where(eq(dashboardVersions.dashboardId, numericId)).run();
-    await deps.db.delete(dashboards).where(eq(dashboards.id, numericId)).run();
+    await deps.db.delete(dashboardItems).where(eq(dashboardItems.dashboardId, numericId));
+    await deps.db.delete(dashboardVersions).where(eq(dashboardVersions.dashboardId, numericId));
+    await deps.db.delete(dashboards).where(eq(dashboards.id, numericId));
     reply.code(204);
   });
 
-  app.get('/api/dashboards/:id/versions', async (request) => {
+  app.get('/api/dashboards/:id/versions', async (request: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -1130,10 +1095,9 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .select()
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, numericId))
-      .all();
     return rows
-      .sort((left, right) => right.version - left.version)
-      .map((row) => ({
+      .sort((left: any, right: any) => right.version - left.version)
+      .map((row: any) => ({
         id: row.id,
         dashboardId: row.dashboardId,
         version: row.version,
@@ -1146,7 +1110,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       }));
   });
 
-  app.get('/api/dashboards/:id/versions/:version', async (request) => {
+  app.get('/api/dashboards/:id/versions/:version', async (request: any) => {
     const { id, version } = request.params as { id: string; version: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -1154,7 +1118,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .select()
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, numericId))
-      .all()).find((entry) => entry.version === Number(version));
+      ).find((entry: any) => entry.version === Number(version));
     if (!row) throw notFound(`Dashboard version ${version} not found`);
     return {
       id: row.id,
@@ -1170,7 +1134,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     };
   });
 
-  app.post('/api/dashboards/:id/versions', async (request, reply) => {
+  app.post('/api/dashboards/:id/versions', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -1192,7 +1156,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     return version;
   });
 
-  app.post('/api/dashboards/:id/versions/:version/restore', async (request) => {
+  app.post('/api/dashboards/:id/versions/:version/restore', async (request: any) => {
     const { id, version } = request.params as { id: string; version: string };
     const numericId = Number(id);
     await readDashboard(deps, numericId);
@@ -1200,7 +1164,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       .select()
       .from(dashboardVersions)
       .where(eq(dashboardVersions.dashboardId, numericId))
-      .all()).find((entry) => entry.version === Number(version));
+      ).find((entry: any) => entry.version === Number(version));
     if (!row) throw notFound(`Dashboard version ${version} not found`);
 
     const snapshot = JSON.parse(row.snapshotJson) as DashboardSnapshot;
@@ -1218,7 +1182,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
 }
 
 export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.post('/api/uploads', async (request, reply) => {
+  app.post('/api/uploads', async (request: any, reply: any) => {
     const data = await request.file();
     if (!data) throw badRequest('No file uploaded');
 
@@ -1258,7 +1222,7 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
 
     const rowCount = await engine.countRows(tableName);
     const now = new Date().toISOString();
-    const inserted = await deps.db
+    const [inserted] = await deps.db
       .insert(uploads)
       .values({
         tableName,
@@ -1268,8 +1232,6 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
         createdAt: now,
       })
       .returning()
-      .get();
-
     reply.code(201);
     return {
       id: inserted.id,
@@ -1282,8 +1244,8 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
   });
 
   app.get('/api/uploads', async () => {
-    const rows = await deps.db.select().from(uploads).all();
-    return rows.map((row) => ({
+    const rows = await deps.db.select().from(uploads);
+    return rows.map((row: any) => ({
       id: row.id,
       tableName: row.tableName,
       filename: row.filename,
@@ -1293,20 +1255,20 @@ export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): voi
     }));
   });
 
-  app.delete('/api/uploads/:id', async (request, reply) => {
+  app.delete('/api/uploads/:id', async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const numericId = Number(id);
-    const rows = await deps.db.select().from(uploads).where(eq(uploads.id, numericId)).all();
+    const rows = await deps.db.select().from(uploads).where(eq(uploads.id, numericId));
     if (rows.length === 0) throw notFound(`Upload ${id} not found`);
     const upload = rows[0];
     await deps.duckDb.dropTable(upload.tableName);
-    await deps.db.delete(uploads).where(eq(uploads.id, numericId)).run();
+    await deps.db.delete(uploads).where(eq(uploads.id, numericId));
     reply.code(204);
   });
 }
 
 export function registerCompileRoute(app: FastifyInstance, deps: RouteDeps): void {
-  app.post('/api/compile', async (request) => {
+  app.post('/api/compile', async (request: any) => {
     const { z } = await import('zod');
     const body = z
       .object({

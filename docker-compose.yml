@@ -1,23 +1,31 @@
-# Multi-service compose with libSQL for Dokploy.
+# Multi-service compose with PostgreSQL for production.
 # Usage: docker compose up -d
 services:
-  sqld:
-    image: ghcr.io/tursodatabase/libsql-server:latest
+  postgres:
+    image: postgres:16-alpine
+    container_name: sqlboard-postgres
     environment:
-      - SQLD_NODE=primary
-      - SQLD_HTTP_LISTEN_ADDR=0.0.0.0:8080
+      - POSTGRES_DB=sqlboard
+      - POSTGRES_USER=sqlboard
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
-      - sqld-data:/data
+      - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sqlboard -d sqlboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   sqlboard:
     build: .
+    image: sqlboard:latest
+    container_name: sqlboard
     ports:
       - "3001:3001"
     environment:
       - DATA_DIR=/data
-      - DATABASE_URL=http://sqld:8080
-      - LIBSQL_AUTH_TOKEN=${LIBSQL_AUTH_TOKEN:-}
+      - DATABASE_URL=postgres://sqlboard:${POSTGRES_PASSWORD}@postgres:5432/sqlboard
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - TENANCY_ENABLED=${TENANCY_ENABLED:-false}
       - BASE_DOMAIN=${BASE_DOMAIN:-}
@@ -30,17 +38,18 @@ services:
     volumes:
       - sqlboard-data:/data
     depends_on:
-      - sqld
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 20s
 
 volumes:
-  sqld-data:
+  postgres-data:
     driver: local
   sqlboard-data:
     driver: local

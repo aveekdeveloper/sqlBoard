@@ -68,6 +68,10 @@ npm run dev -w packages/web
 
 Open http://localhost:5173 and log in with `admin@example.com` / `admin`.
 
+Metadata is stored in a local SQLite file by default (via libSQL, `file:./data/sqlboard.db`).
+Set `DATABASE_URL=postgres://user:pass@host:5432/sqlboard` to use PostgreSQL instead;
+tables are created automatically on boot.
+
 Sample data includes: `sales` (month, region, revenue), `users` (month, region, users),
 `products` (category, subcategory, sales). A sample dashboard with 4 charts and 4 saved
 queries are pre-created.
@@ -75,14 +79,12 @@ queries are pre-created.
 ## Docker
 
 ```bash
-docker compose up
+cp .env.example .env   # set POSTGRES_PASSWORD and SECRET_KEY
+docker compose up -d --build
 ```
 
-Seed sample data by running:
-
-```bash
-docker compose exec sqlboard node packages/api/scripts/seed.cjs
-```
+Compose starts PostgreSQL 16 plus the sqlboard container. Database tables and sample
+data are seeded on first boot.
 
 ## For agents
 
@@ -144,14 +146,17 @@ writes these annotations into every chart block for you.
 
 ```bash
 cp .env.example .env
-# edit .env and set a strong SECRET_KEY
+# edit .env and set POSTGRES_PASSWORD and a strong SECRET_KEY
 docker compose up -d --build
 ```
 
-The container seeds sample data on first boot (admin `admin@example.com` / `admin`),
-serves the API and the web UI on port `3001`, and persists all state in the
-`sqlboard-data` volume. Back up that volume (it contains `sqlboard.db`,
-`sqlboard.duckdb`, and `uploads/`).
+The stack runs PostgreSQL 16 (`postgres-data` volume) and the sqlboard container
+(`sqlboard-data` volume for `sqlboard.duckdb` and `uploads/`). The container seeds
+sample data on first boot (admin `admin@example.com` / `admin`), serves the API and
+the web UI on port `3001`, and keeps metadata in Postgres.
+
+To run metadata on a libSQL file instead, leave `DATABASE_URL` unset (or set it to a
+`file:` URL); in that case the SQLite database lives in `sqlboard-data` too.
 
 ### Dokploy
 
@@ -160,17 +165,22 @@ serves the API and the web UI on port `3001`, and persists all state in the
 3. Set environment variables in the Dokploy UI:
    - `SECRET_KEY` — a long random string. **Required.** Used to encrypt connection
      credentials at rest; changing it later invalidates stored connections.
+   - `DATABASE_URL` — Postgres connection string. Optional; without it metadata is
+     stored in a SQLite file on the `/data` volume.
    - `CACHE_TTL_MINUTES`, `MAX_CACHE_ROWS`, `QUERY_TIMEOUT_MS` (optional).
 4. Add a persistent volume mounted at `/data` (Dokploy → Storage). This holds the
-   SQLite database, DuckDB file, and uploaded files.
+   DuckDB file and uploaded files (and the SQLite database if `DATABASE_URL` is unset).
 5. Assign a domain in Dokploy; Traefik terminates TLS and proxies to port `3001`.
 6. Deploy. The first boot seeds the admin user and sample dashboard. Subsequent
    deploys keep the data volume.
 
 Notes:
-- Single replica only: SQLite + DuckDB are file-backed, so do not scale horizontally.
-- Back up `/data` regularly.
-- To reset to a clean state, delete the volume and redeploy (data is lost).
+- The API can use a managed Postgres (RDS, Neon, Supabase) by setting `DATABASE_URL`.
+- DuckDB and uploads are file-backed, so run a single sqlboard replica per `/data`
+  volume.
+- Back up Postgres (if used) and `/data` regularly.
+- To reset to a clean state, delete the Postgres database (or volume) and redeploy
+  (data is lost).
 
 ## License
 

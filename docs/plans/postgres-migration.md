@@ -1,6 +1,6 @@
 # Plan: Migrate sqlboard metadata from libSQL/SQLite to PostgreSQL
 
-**Status**: Draft plan
+**Status**: Implemented (see §13) — dual-backend: Postgres opt-in, libSQL default
 **Owner**: sqlboard
 **Created**: 2026-10-27
 **Motivation**: Scale, multi-tenancy (schema-per-tenant), HA, managed backups, horizontal scaling
@@ -230,3 +230,32 @@ Adopted from semantix's `core/tenancy.py`:
 3. Per-tenant schemas (semantix pattern) or DB-per-tenant? (Lean: schema-per-tenant on Postgres — simpler, shared connection pool)
 4. Should DuckDB move to Postgres or stay file-based? (Lean: stay file-based — DuckDB's strength is local analytics)
 5. Managed Postgres (Neon/Supabase) or self-hosted? (Lean: support both — connection string is the only config)
+
+## 13. Implementation status (2026-10-29)
+
+Shipped:
+
+- **Backend selection**: `packages/api/src/db/client.ts` opens libSQL (`file:`/`http:`/`libsql:`) or
+  Postgres (`postgres://`/`postgresql://`) from `DATABASE_URL`. Both return a Drizzle instance, so
+  routes are backend-agnostic; libSQL stays the default for local dev.
+- **Schema**: `schema.ts` (SQLite definitions) drives runtime queries for both backends —
+  drizzle's `node-postgres` driver accepts the SQLite table objects and emits valid SQL.
+  `schema.pg.ts` (postgres-core) is used for Postgres bootstrap/seeding and typed inserts.
+- **Bootstrap**: `CREATE TABLE IF NOT EXISTS` (plus unique indexes) runs on boot for both
+  backends; Postgres uses `SERIAL`, `UUID`, `TIMESTAMPTZ`, `gen_random_uuid()`.
+  No drizzle-kit migrations yet (dev stage; no migration/back-compat required).
+- **Multi-tenancy**: shared tables with `tenant_id` + application-level filtering, not
+  schema-per-tenant. Tenant resolved from `X-Tenant` header or host/domain, fail-closed (404),
+  AsyncLocalStorage entered around the `onRequest` hook's `done()`. Cross-tenant sessions → 403,
+  cross-tenant API tokens → 401.
+- **Deployment**: `docker-compose.yml` runs Postgres 16 + sqlboard, waiting on a Postgres
+  healthcheck; `.env.example` documents `POSTGRES_PASSWORD`/`SECRET_KEY` and the libSQL fallback.
+- **Seeds**: `scripts/seed.cjs` and `scripts/seed-admin.cjs` import the built `dist` modules, so
+  they work against either backend.
+
+Deferred:
+
+- drizzle-kit migration tooling and a SQLite → Postgres data migration script.
+- Schema-per-tenant (`t_{slug}`, per-request `search_path`) and Postgres RLS.
+- DuckDB remains file-based.
+

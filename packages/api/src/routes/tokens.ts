@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DrizzleDb } from '../db/client.js';
 import { apiTokens } from '../db/schema.js';
@@ -21,16 +21,17 @@ function currentUser(request: FastifyRequest): AuthUser {
 }
 
 export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb }): void {
-  app.get('/api/tokens', async (request) => {
+  app.get('/api/tokens', async (request: any) => {
     const user = currentUser(request);
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
     const rows = await deps.db
       .select()
       .from(apiTokens)
-      .where(eq(apiTokens.userId, user.id))
-      .all();
+      .where(and(eq(apiTokens.userId, user.id), eq(apiTokens.tenantId, tenant.id)))
     return rows
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-      .map((row) => ({
+      .sort((left: any, right: any) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .map((row: any) => ({
         id: row.id,
         name: row.name,
         prefix: row.prefix,
@@ -42,7 +43,7 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
       }));
   });
 
-  app.post('/api/tokens', async (request, reply) => {
+  app.post('/api/tokens', async (request: any, reply: any) => {
     const user = currentUser(request);
     const parsed = CreateTokenSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid API token', parsed.error.flatten());
@@ -54,12 +55,14 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
 
     const token = generateApiToken();
     const now = new Date();
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
     const expiresAt =
       parsed.data.expiresInDays == null
         ? null
         : new Date(now.getTime() + parsed.data.expiresInDays * 24 * 60 * 60 * 1000).toISOString();
 
-    const inserted = await deps.db
+    const [inserted] = await deps.db
       .insert(apiTokens)
       .values({
         userId: user.id,
@@ -68,10 +71,10 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
         prefix: `${token.slice(0, 11)}…`,
         scope,
         expiresAt,
+        tenantId: tenant.id,
         createdAt: now.toISOString(),
       })
-      .returning()
-      .get();
+      .returning();
 
     reply.code(201);
     return {
@@ -86,16 +89,19 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
     };
   });
 
-  app.delete('/api/tokens/:id', async (request, reply) => {
+  app.delete('/api/tokens/:id', async (request: any, reply: any) => {
     const user = currentUser(request);
     const { id } = request.params as { id: string };
     const rows = await deps.db
       .select()
       .from(apiTokens)
       .where(eq(apiTokens.id, Number(id)))
-      .all();
     const token = rows[0];
     if (!token) throw notFound(`API token ${id} not found`);
+    const { currentTenant } = await import('../core/tenancy.js');
+    if (token.tenantId !== currentTenant().id) {
+      throw notFound(`API token ${id} not found`);
+    }
     if (token.userId !== user.id && user.role !== 'admin') {
       throw new ApiError(403, 'FORBIDDEN', 'cannot revoke another user’s token');
     }
