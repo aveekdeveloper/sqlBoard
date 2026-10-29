@@ -10,6 +10,7 @@ import {
 import type { DrizzleDb } from '../db/client.js';
 import { ApiError, notFound } from '../errors.js';
 import {
+  parseDashboardManifest,
   serializeDashboardManifest,
   type ApplyDashboardState,
   type ManifestDashboard,
@@ -283,4 +284,81 @@ export async function applyDashboardState(
   );
 
   return { dashboard: await dashboardResponse(db, id, tenantId), version };
+}
+
+export async function exportDashboardCode(
+  db: DrizzleDb,
+  id: number,
+  tenantId?: string,
+): Promise<string> {
+  const { snapshot } = await readDashboard(db, id, tenantId);
+  const connectionList = await db
+    .select({ id: connections.id, name: connections.name })
+    .from(connections);
+  return serializeDashboardManifest(snapshot, connectionList);
+}
+
+export async function copyDashboard(
+  db: DrizzleDb,
+  id: number,
+  authorId: number | null,
+  tenantId?: string,
+): Promise<{ dashboard: Awaited<ReturnType<typeof dashboardResponse>>; version: DashboardVersionSummary }> {
+  const { row, snapshot: original } = await readDashboard(db, id, tenantId);
+  const snapshot: DashboardSnapshot = {
+    ...original,
+    name: `Copy of ${original.name}`,
+  };
+  const now = new Date().toISOString();
+  const tenant = tenantId ?? row.tenantId;
+  const [inserted] = await db
+    .insert(dashboards)
+    .values({
+      name: snapshot.name,
+      description: snapshot.description,
+      filtersJson: JSON.stringify(snapshot.filters ?? []),
+      theme: snapshot.theme ?? null,
+      colorsJson: snapshot.colors ? JSON.stringify(snapshot.colors) : null,
+      tenantId: tenant,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  await applySnapshot(db, inserted.id, snapshot);
+  const version = await insertVersion(db, inserted.id, snapshot, 'Copied dashboard', 'manual', authorId);
+  return { dashboard: await dashboardResponse(db, inserted.id, tenantId), version };
+}
+
+export async function importDashboard(
+  db: DrizzleDb,
+  code: string,
+  authorId: number | null,
+  tenantId?: string,
+  name?: string,
+): Promise<{ dashboard: Awaited<ReturnType<typeof dashboardResponse>>; version: DashboardVersionSummary; diagnostics: any[] }> {
+  const connectionList = await db
+    .select({ id: connections.id, name: connections.name })
+    .from(connections);
+  const parsed = parseDashboardManifest(code, connectionList);
+  const snapshot: DashboardSnapshot = parsed.dashboard;
+  if (name) snapshot.name = name;
+
+  const now = new Date().toISOString();
+  const tenant = tenantId ?? '00000000-0000-0000-0000-000000000000';
+  const [inserted] = await db
+    .insert(dashboards)
+    .values({
+      name: snapshot.name,
+      description: snapshot.description,
+      filtersJson: JSON.stringify(snapshot.filters ?? []),
+      theme: snapshot.theme ?? null,
+      colorsJson: snapshot.colors ? JSON.stringify(snapshot.colors) : null,
+      tenantId: tenant,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  await applySnapshot(db, inserted.id, snapshot);
+  const version = await insertVersion(db, inserted.id, snapshot, 'Imported dashboard', 'manual', authorId);
+  return { dashboard: await dashboardResponse(db, inserted.id, tenantId), version, diagnostics: parsed.diagnostics };
 }

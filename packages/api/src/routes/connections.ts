@@ -984,6 +984,36 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     return { ...await dashboardResponse(deps.db, numericId), version: restored };
   });
 
+  // --- Copy / Export / Import ---
+  app.get('/api/dashboards/:id/code', async (request: any, reply: any) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const code = await (await import('../core/dashboard-service.js')).exportDashboardCode(deps.db, numericId, tenant.id);
+    reply.header('Content-Type', 'text/plain; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="dashboard-${numericId}.sql"`);
+    return code;
+  });
+
+  app.post('/api/dashboards/:id/copy', async (request: any) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const authorId = authorIdFrom(request);
+    return await (await import('../core/dashboard-service.js')).copyDashboard(deps.db, numericId, authorId, tenant.id);
+  });
+
+  app.post('/api/dashboards/import', async (request: any) => {
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const body = request.body as { code?: string; name?: string };
+    if (!body?.code) throw badRequest('Missing dashboard code');
+    const authorId = authorIdFrom(request);
+    return await (await import('../core/dashboard-service.js')).importDashboard(deps.db, body.code, authorId, tenant.id, body.name);
+  });
+
   // --- Share links (public read via token) ---
   app.post('/api/dashboards/:id/share', async (request: any) => {
     const { id } = request.params as { id: string };

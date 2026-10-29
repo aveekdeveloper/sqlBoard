@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -8,6 +8,7 @@ const PAGE_SIZE = 9;
 export default function Dashboards() {
   const [name, setName] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -16,6 +17,7 @@ export default function Dashboards() {
   const [sortDir, setSortDir] = useState('desc');
   const qc = useQueryClient();
   const { canWrite } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: dashboards } = useQuery({
     queryKey: ['dashboards', tagFilter.join(','), sortBy, sortDir],
@@ -84,12 +86,43 @@ export default function Dashboards() {
           </p>
         </div>
         {canWrite && (
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
-          >
-            {showForm ? 'Cancel' : '+ New dashboard'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
+            >
+              {showForm ? 'Cancel' : '+ New dashboard'}
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink disabled:opacity-50"
+            >
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".sql,.txt"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setImporting(true);
+                try {
+                  const code = await file.text();
+                  const res = await api.dashboards.importCode({ code });
+                  qc.invalidateQueries({ queryKey: ['dashboards'] });
+                  if (res?.dashboard?.id) window.location.href = `/dashboards/${res.dashboard.id}`;
+                } catch (err: any) {
+                  window.alert(err?.message || 'Import failed.');
+                } finally {
+                  setImporting(false);
+                  e.target.value = '';
+                }
+              }}
+            />
+          </div>
         )}
       </div>
 

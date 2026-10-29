@@ -211,6 +211,10 @@ export const api = {
     get: (id: number) => request<DashboardDetailDto>(`/api/dashboards/${id}`),
     create: (body: { name: string; description?: string }) =>
       request<DashboardDto>('/api/dashboards', { method: 'POST', body: JSON.stringify(body) }),
+    copy: (id: number) => request<any>(`/api/dashboards/${id}/copy`, { method: 'POST' }),
+    exportCode: (id: number) => request<string>(`/api/dashboards/${id}/code`),
+    importCode: (body: { code: string; name?: string }) =>
+      request<any>('/api/dashboards/import', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number, body: { name?: string; description?: string | null; tags?: string[] }) =>
       request<DashboardDetailDto>(`/api/dashboards/${id}`, {
         method: 'PATCH',

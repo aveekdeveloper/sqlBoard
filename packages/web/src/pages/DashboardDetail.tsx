@@ -726,6 +726,44 @@ export default function DashboardDetail() {
               >
                 Full page
               </a>
+              {canWrite && (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const code = await api.dashboards.exportCode(dashboardId);
+                        const blob = new Blob([code], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `dashboard-${dashboardId}.sql`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (e: any) {
+                        window.alert(e?.message || 'Export failed.');
+                      }
+                    }}
+                    className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+                  >
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await api.dashboards.copy(dashboardId);
+                        window.location.href = `/dashboards/${res.dashboard.id}`;
+                      } catch (e: any) {
+                        window.alert(e?.message || 'Copy failed.');
+                      }
+                    }}
+                    className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+                  >
+                    Copy
+                  </button>
+                </>
+              )}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-ink-muted md:text-[10.5px]">
               {doc.description && (
