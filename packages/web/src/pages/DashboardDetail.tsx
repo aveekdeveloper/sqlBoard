@@ -403,25 +403,17 @@ export default function DashboardDetail() {
       }
       setCommitting(true);
       try {
-        if (dirty) {
-          await applyCode('manual', message);
-          return;
-        }
-        const version = await api.dashboards.commitVersion(dashboardId, message);
-        queryClient.setQueryData<DashboardDetailDto>(['dashboard', dashboardId], (current) =>
-          current ? { ...current, latestVersion: version.version } : current,
-        );
-        void queryClient.invalidateQueries({ queryKey: ['dashboard-versions', dashboardId] });
-        void queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+        // Always apply the edited code first so commits persist code changes
+        // even when the dirty heuristic misses a change.
+        await applyCode('manual', message);
         setCommitOpen(false);
-        notify(`Committed as v${version.version}`);
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), 'error');
       } finally {
         setCommitting(false);
       }
     },
-    [errors.length, dirty, applyCode, queryClient, dashboardId, notify],
+    [errors.length, applyCode, notify],
   );
 
   const restore = useCallback(
