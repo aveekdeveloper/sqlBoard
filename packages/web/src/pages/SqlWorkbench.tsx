@@ -152,6 +152,10 @@ export default function SqlWorkbench() {
 
   function renderChart(res: any, container: HTMLDivElement | null, instanceRef: React.MutableRefObject<any>) {
     if (!container) return;
+    if (instanceRef.current && instanceRef.current.getDom && instanceRef.current.getDom() !== container) {
+      try { instanceRef.current.dispose(); } catch (e) {}
+      instanceRef.current = null;
+    }
     if (!instanceRef.current) {
       instanceRef.current = echarts.init(container);
     }
@@ -163,6 +167,8 @@ export default function SqlWorkbench() {
           instanceRef.current.resize();
         } catch (e) {}
       }, 50);
+    } else {
+      console.log('renderChart no spec', res);
     }
   }
 
