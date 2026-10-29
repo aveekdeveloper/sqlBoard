@@ -109,14 +109,10 @@ function clearSession(): void {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const tenant = getTenant();
-  const shareToken = window.location.pathname.startsWith('/share/')
-    ? localStorage.getItem('sqlboard_share_token')
-    : null;
   const headers: Record<string, string> = {};
   if (init?.body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (tenant) headers['X-Tenant'] = tenant;
-  if (shareToken) headers['X-Share-Token'] = shareToken;
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
   if (!res.ok) {
@@ -281,15 +277,4 @@ export const api = {
 
   compile: (body: { sql: string; connectionId?: number; data?: any[]; theme?: string; backend?: string; backends?: string[] }) =>
     request<any>('/api/compile', { method: 'POST', body: JSON.stringify(body) }),
-
-  shares: {
-    create: (dashboardId: number, body?: { expiresAt?: string }) =>
-      request<{ token: string; url: string }>(`/api/dashboards/${dashboardId}/share`, {
-        method: 'POST',
-        body: JSON.stringify(body ?? {}),
-      }),
-    get: (token: string) => request<{ dashboard: any; expiresAt: string | null }>(`/api/share/${token}`),
-    revoke: (dashboardId: number, token: string) =>
-      request<void>(`/api/dashboards/${dashboardId}/share/${token}`, { method: 'DELETE' }),
-  },
 };

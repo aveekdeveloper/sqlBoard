@@ -316,7 +316,6 @@ export default function DashboardDetail() {
   const [applying, setApplying] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [restoring, setRestoring] = useState(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [savingLayout, setSavingLayout] = useState(false);
 
   const versionsQuery = useQuery({
@@ -727,23 +726,6 @@ export default function DashboardDetail() {
               >
                 Full page
               </a>
-              {canWrite && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await api.shares.create(dashboardId);
-                      const url = `${window.location.origin}/share/${res.token}`;
-                      setShareUrl(url);
-                    } catch (e: any) {
-                      window.alert(e?.message || 'Could not create share link.');
-                    }
-                  }}
-                  className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
-                >
-                  Share
-                </button>
-              )}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-ink-muted md:text-[10.5px]">
               {doc.description && (
@@ -1038,42 +1020,7 @@ export default function DashboardDetail() {
         onNotify={(message) => notify(message, 'info')}
       />
 
-      {shareUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShareUrl(null)}>
-          <div className="w-full max-w-lg rounded-xl border border-line bg-surface p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-[14px] font-semibold text-ink">Share link</h3>
-            <p className="mt-1 text-[11.5px] text-ink-muted">Anyone with this link can view the dashboard (read-only).</p>
-            <input
-              readOnly
-              value={shareUrl}
-              className="mt-3 w-full rounded-md border border-line bg-paper px-3 py-2 text-[12px] text-ink"
-              onFocus={(e) => e.target.select()}
-            />
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShareUrl(null)}
-                className="rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-soft hover:border-line-strong"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(shareUrl);
-                  } catch {
-                    // ignore; user can copy from input
-                  }
-                }}
-                className="rounded-md bg-ink px-3 py-1.5 text-[12px] font-medium text-surface hover:bg-ink-soft"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       <Dialog
         open={filterEditorOpen}
