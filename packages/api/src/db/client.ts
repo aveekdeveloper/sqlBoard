@@ -87,6 +87,7 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
     `CREATE UNIQUE INDEX IF NOT EXISTS tags_name_tenant_unique ON tags (name, tenant_id)`,
     `CREATE TABLE IF NOT EXISTS saved_query_tags (saved_query_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS dashboard_tags (dashboard_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS dashboard_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, tenant_id TEXT NOT NULL, token TEXT NOT NULL UNIQUE, expires_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL)`,
   ];
 
   for (const stmt of bootstrapSql) {
@@ -166,6 +167,7 @@ async function openPostgres(config: SqlboardConfig): Promise<OpenedDatabase> {
     `CREATE UNIQUE INDEX IF NOT EXISTS tags_name_tenant_unique ON tags (name, tenant_id)`,
     `CREATE TABLE IF NOT EXISTS saved_query_tags (saved_query_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS dashboard_tags (dashboard_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS dashboard_shares (id SERIAL PRIMARY KEY, dashboard_id INTEGER NOT NULL, tenant_id UUID NOT NULL, token TEXT NOT NULL UNIQUE, expires_at TIMESTAMPTZ, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
   ];
 
   for (const stmt of bootstrapSql) {

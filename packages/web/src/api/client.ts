@@ -109,7 +109,9 @@ function clearSession(): void {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const tenant = getTenant();
-  const shareToken = localStorage.getItem('sqlboard_share_token');
+  const shareToken = window.location.pathname.startsWith('/share/')
+    ? localStorage.getItem('sqlboard_share_token')
+    : null;
   const headers: Record<string, string> = {};
   if (init?.body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
