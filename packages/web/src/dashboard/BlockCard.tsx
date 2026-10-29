@@ -2,6 +2,7 @@ import {
   BarChart3,
   Gauge,
   GripVertical,
+  Maximize2,
   Pencil,
   Table2,
   Trash2,
@@ -35,6 +36,7 @@ export function BlockCard({
   filterValues,
   onEdit,
   onDelete,
+  onExpand,
   bodyClassName = '',
 }: {
   item: ManifestItem;
@@ -45,6 +47,7 @@ export function BlockCard({
   filterValues?: Record<string, any>;
   onEdit?: () => void;
   onDelete?: () => void;
+  onExpand?: () => void;
   bodyClassName?: string;
 }) {
   const showHandle = draggable ?? editing;
@@ -85,6 +88,17 @@ export function BlockCard({
             {TYPE_LABEL[item.blockType]} · {meta}
           </div>
         </div>
+        {onExpand && (item.blockType === 'chart' || item.blockType === 'table') && (
+          <button
+            type="button"
+            onClick={onExpand}
+            className="block-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-[#f1eee7] hover:text-ink"
+            title="Expand"
+            aria-label={`Expand ${item.title}`}
+          >
+            <Maximize2 size={13} strokeWidth={1.8} />
+          </button>
+        )}
         {editing && (
           <div className="block-no-drag flex shrink-0 items-center gap-0.5">
             <button
