@@ -11,6 +11,7 @@ export default function Dashboards() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortDir, setSortDir] = useState('desc');
   const qc = useQueryClient();
@@ -43,6 +44,12 @@ export default function Dashboards() {
   const createTagMutation = useMutation({
     mutationFn: (name: string) => api.tags.create({ name }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tags'] }),
+  });
+
+  const updateTagsMutation = useMutation({
+    mutationFn: ({ id, tags }: { id: number; tags: string[] }) =>
+      api.dashboards.update(id, { tags }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboards'] }),
   });
 
   const toggleTag = (name: string) => {
@@ -161,15 +168,29 @@ export default function Dashboards() {
             </button>
           ))}
           {canWrite && (
-            <button
-              onClick={() => {
-                const name = window.prompt('New tag name');
-                if (name && name.trim()) createTagMutation.mutate(name.trim());
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newTag.trim()) {
+                  createTagMutation.mutate(newTag.trim());
+                  setNewTag('');
+                }
               }}
-              className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+              className="flex items-center gap-1"
             >
-              + New tag
-            </button>
+              <input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                placeholder="New tag"
+                className="w-24 rounded-full border border-dashed border-line bg-surface px-2.5 py-0.5 text-[11px] text-ink placeholder:text-ink-faint"
+              />
+              <button
+                type="submit"
+                className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+              >
+                + Add
+              </button>
+            </form>
           )}
         </div>
       </div>
@@ -188,22 +209,54 @@ export default function Dashboards() {
             {d.description && (
               <p className="mt-1 text-[12px] text-ink-muted">{d.description}</p>
             )}
-            {(d.tags || []).length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {d.tags.map((tag: string) => {
-                  const tagInfo = (allTags || []).find((t: any) => t.name === tag);
-                  return (
-                    <span
-                      key={tag}
-                      className="rounded-full bg-paper px-2 py-0.5 text-[10px] font-medium text-ink-muted"
-                      style={tagInfo?.color ? { backgroundColor: tagInfo.color + '18', color: tagInfo.color } : undefined}
-                    >
-                      {tag}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              {(d.tags || []).map((tag: string) => {
+                const tagInfo = (allTags || []).find((t: any) => t.name === tag);
+                return (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full bg-paper px-2 py-0.5 text-[10px] font-medium text-ink-muted"
+                    style={tagInfo?.color ? { backgroundColor: tagInfo.color + '18', color: tagInfo.color } : undefined}
+                  >
+                    {tag}
+                    {canWrite && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = (d.tags || []).filter((t: string) => t !== tag);
+                          updateTagsMutation.mutate({ id: d.id, tags: next });
+                        }}
+                        className="ml-0.5 text-[9px] hover:text-signal"
+                        aria-label={`Remove ${tag}`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+              {canWrite && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    if (!name) return;
+                    const current = d.tags || [];
+                    if (current.includes(name)) return;
+                    updateTagsMutation.mutate({ id: d.id, tags: [...current, name] });
+                  }}
+                  className="rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] text-ink-muted"
+                  aria-label="Add tag"
+                >
+                  <option value="">+ tag</option>
+                  {(allTags || [])
+                    .filter((t: any) => !(d.tags || []).includes(t.name))
+                    .map((t: any) => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                </select>
+              )}
+            </div>
             <div className="mt-3 flex items-center justify-between">
               <span className="text-[10.5px] text-ink-faint">
                 {new Date(d.createdAt).toLocaleDateString()}

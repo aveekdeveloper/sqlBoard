@@ -18,6 +18,7 @@ export default function SavedQueries() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
   const [connectionFilter, setConnectionFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortDir, setSortDir] = useState('desc');
@@ -160,15 +161,29 @@ export default function SavedQueries() {
             </button>
           ))}
           {canWrite && (
-            <button
-              onClick={() => {
-                const name = window.prompt('New tag name');
-                if (name && name.trim()) createTagMutation.mutate(name.trim());
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newTag.trim()) {
+                  createTagMutation.mutate(newTag.trim());
+                  setNewTag('');
+                }
               }}
-              className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+              className="flex items-center gap-1"
             >
-              + New tag
-            </button>
+              <input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                placeholder="New tag"
+                className="w-24 rounded-full border border-dashed border-line bg-surface px-2.5 py-0.5 text-[11px] text-ink placeholder:text-ink-faint"
+              />
+              <button
+                type="submit"
+                className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+              >
+                + Add
+              </button>
+            </form>
           )}
         </div>
       </div>
