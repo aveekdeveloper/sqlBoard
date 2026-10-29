@@ -40,6 +40,11 @@ export default function Dashboards() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboards'] }),
   });
 
+  const createTagMutation = useMutation({
+    mutationFn: (name: string) => api.tags.create({ name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tags'] }),
+  });
+
   const toggleTag = (name: string) => {
     setTagFilter((prev) =>
       prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name],
@@ -156,6 +161,17 @@ export default function Dashboards() {
                 {t.name}
               </button>
             ))}
+            {canWrite && (
+              <button
+                onClick={() => {
+                  const name = window.prompt('New tag name');
+                  if (name && name.trim()) createTagMutation.mutate(name.trim());
+                }}
+                className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+              >
+                + New tag
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -169,17 +169,6 @@ export default function DashboardDetail() {
     staleTime: 60_000,
   });
 
-  const tagsQuery = useQuery({
-    queryKey: ['tags'],
-    queryFn: () => api.tags.list(),
-    staleTime: 60_000,
-  });
-
-  const updateTagsMutation = useMutation({
-    mutationFn: (tags: string[]) => api.dashboards.update(dashboardId, { tags }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboard', dashboardId] }),
-  });
-
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const manifestConnections = useMemo(
     () => connections.map((connection) => ({ id: connection.id, name: connection.name })),
@@ -730,7 +719,7 @@ export default function DashboardDetail() {
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-ink-muted md:text-[10.5px]">
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-ink-muted md:text-[10.5px]">
               {doc.description && (
                 <>
                   <span className="truncate">{doc.description}</span>
@@ -740,55 +729,6 @@ export default function DashboardDetail() {
               <span className="shrink-0 tabular">
                 {blockCount} block{blockCount === 1 ? '' : 's'}
               </span>
-              {(dashboard?.tags || []).length > 0 && (
-                <span className="text-ink-faint">·</span>
-              )}
-              {(dashboard?.tags || []).map((tag: string) => {
-                const info = (tagsQuery.data || []).find((t: any) => t.name === tag);
-                return (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 rounded-full bg-paper px-2 py-0.5 text-[10px] font-medium text-ink-muted"
-                    style={info?.color ? { backgroundColor: info.color + '18', color: info.color } : undefined}
-                  >
-                    {tag}
-                    {canWrite && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = (dashboard?.tags || []).filter((t: string) => t !== tag);
-                          updateTagsMutation.mutate(next);
-                        }}
-                        className="ml-0.5 text-[9px] hover:text-signal"
-                        aria-label={`Remove ${tag}`}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                );
-              })}
-              {canWrite && (
-                <select
-                  value=""
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    if (!name) return;
-                    const current = dashboard?.tags || [];
-                    if (current.includes(name)) return;
-                    updateTagsMutation.mutate([...current, name]);
-                  }}
-                  className="rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] text-ink-muted"
-                  aria-label="Add tag"
-                >
-                  <option value="">+ tag</option>
-                  {(tagsQuery.data || [])
-                    .filter((t: any) => !(dashboard?.tags || []).includes(t.name))
-                    .map((t: any) => (
-                      <option key={t.id} value={t.name}>{t.name}</option>
-                    ))}
-                </select>
-              )}
               <span className="hidden text-ink-faint sm:inline">·</span>
               <span className="hidden shrink-0 sm:inline">
                 updated {relativeTime(dashboard.updatedAt)}
