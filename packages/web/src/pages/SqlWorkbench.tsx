@@ -518,14 +518,6 @@ export default function SqlWorkbench() {
                 </button>
               )}
             </div>
-            {inferredAnnotations && (
-              <div className="mt-3 rounded-lg border border-line bg-paper px-3 py-2">
-                <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
-                  Inferred annotations (copy to build on)
-                </div>
-                <pre className="overflow-auto text-[11px] text-ink-soft">{inferredAnnotations}</pre>
-              </div>
-            )}
             {showGrammar && (
               <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-paper p-3 text-[11px] text-ink-soft">
 {`-- @viz: bar | line | area | scatter | pie | heatmap
@@ -613,6 +605,14 @@ first category->series, default bar/line.`}
             ) : (
               <div>
                 <div ref={chartRef} className="h-64 w-full md:h-80" />
+                {inferredAnnotations && (
+                  <div className="mt-3 rounded-lg border border-line bg-paper px-3 py-2">
+                    <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+                      Inferred annotations (copy to build on)
+                    </div>
+                    <pre className="overflow-auto text-[11px] text-ink-soft">{inferredAnnotations}</pre>
+                  </div>
+                )}
                 {compileResult?.diagnostics?.length > 0 && (
                   <div className="mt-3 space-y-1">
                     {compileResult.diagnostics.map((d: any, i: number) => (
