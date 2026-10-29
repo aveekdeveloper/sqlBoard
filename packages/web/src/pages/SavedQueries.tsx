@@ -157,7 +157,7 @@ export default function SavedQueries() {
               style={tagFilter.includes(t.name) && t.color ? { backgroundColor: t.color + '20', color: t.color } : undefined}
             >
               {t.name}
-              {t.usageCount > 0 && <span className="ml-1 text-[9px] opacity-60">{t.usageCount}</span>}
+              {t.usageCount > 0 && <span className="ml-1 text-[9px] opacity-60">({t.usageCount})</span>}
             </button>
           ))}
           {canWrite && (
