@@ -114,15 +114,20 @@ export function styleAxes(
   const xFormat = (overrides?.xFormat ?? annotations.xformat ?? annotations.xFormat ?? 'auto').toLowerCase();
   const yFormat = (overrides?.yFormat ?? annotations.yformat ?? annotations.yFormat ?? 'auto').toLowerCase();
   const timeFormat = overrides?.timeFormat ?? annotations.timeformat ?? annotations.timeFormat;
-  const rotateOverride = annotations.rotate ? Number(annotations.rotate) : null;
+  const xRotateOverride = annotations.xrotate || annotations.xRotate
+    ? Number(annotations.xrotate ?? annotations.xRotate)
+    : (annotations.rotate ? Number(annotations.rotate) : null);
+  const yRotateOverride = annotations.yrotate || annotations.yRotate
+    ? Number(annotations.yrotate ?? annotations.yRotate)
+    : (annotations.rotate ? Number(annotations.rotate) : null);
 
-  const styleAxis = (axis: unknown, format: string, tf?: string) => {
+  const styleAxis = (axis: unknown, format: string, tf?: string, rotateOverride?: number | null) => {
     if (!axis || typeof axis !== 'object' || Array.isArray(axis)) return axis;
     const a = axis as Record<string, unknown>;
     const labels = Array.isArray(a.data) ? a.data : [];
     const maxLabelLen = labels.reduce((max: number, l: unknown) => Math.max(max, String(l ?? '').length), 0);
     const autoRotate = maxLabelLen > 12 ? 45 : maxLabelLen > 8 ? 30 : 0;
-    const rotate = rotateOverride !== null && !isNaN(rotateOverride) ? rotateOverride : autoRotate;
+    const rotate = rotateOverride != null && !isNaN(rotateOverride) ? rotateOverride : autoRotate;
     const isDate = labels.length > 0 && labels.some(isDateLike);
     const resolvedFormat = format === 'auto' ? (isDate ? 'date' : 'compact') : format;
 
@@ -147,11 +152,11 @@ export function styleAxes(
   };
 
   const xAxis = Array.isArray(option.xAxis)
-    ? option.xAxis.map((a) => styleAxis(a, xFormat, timeFormat))
-    : styleAxis(option.xAxis, xFormat, timeFormat);
+    ? option.xAxis.map((a) => styleAxis(a, xFormat, timeFormat, xRotateOverride))
+    : styleAxis(option.xAxis, xFormat, timeFormat, xRotateOverride);
   const yAxis = Array.isArray(option.yAxis)
-    ? option.yAxis.map((a) => styleAxis(a, yFormat, timeFormat))
-    : styleAxis(option.yAxis, yFormat, timeFormat);
+    ? option.yAxis.map((a) => styleAxis(a, yFormat, timeFormat, yRotateOverride))
+    : styleAxis(option.yAxis, yFormat, timeFormat, yRotateOverride);
 
   const xRotated = Array.isArray(xAxis)
     ? xAxis.some((a: any) => (a?.axisLabel?.rotate ?? 0) > 0)

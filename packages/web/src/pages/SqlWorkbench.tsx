@@ -20,6 +20,7 @@ export default function SqlWorkbench() {
   const [result, setResult] = useState<any>(null);
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState<any>(null);
+  const [inferredAnnotations, setInferredAnnotations] = useState<string>('');
   const [status, setStatus] = useState('');
   const [showGrammar, setShowGrammar] = useState(false);
   const [tables, setTables] = useState<any[]>([]);
@@ -138,6 +139,12 @@ export default function SqlWorkbench() {
         backends: ['echarts', 'vegalite', 'chartjs', 'plotly'],
       });
       setCompileResult(res);
+      const enc = res?.flint?.chart_spec?.encodings || {};
+      const lines = [];
+      for (const key of ['viz', 'x', 'y', 'groupby', 'stack', 'title', 'theme']) {
+        if (enc[key]) lines.push(`-- @${key}: ${enc[key]}`);
+      }
+      setInferredAnnotations(lines.join('\\n'));
       renderChart(res, chartRef.current, chartInstance);
       const errCount = res.diagnostics.filter((d: any) => d.severity === 'error').length;
       const warnCount = res.diagnostics.filter((d: any) => d.severity === 'warning').length;
@@ -358,6 +365,14 @@ export default function SqlWorkbench() {
           {status}
         </div>
       )}
+      {inferredAnnotations && (
+        <div className="rounded-lg border border-line bg-paper px-3 py-2">
+          <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+            Inferred annotations (copy to build on)
+          </div>
+          <pre className="overflow-auto text-[11px] text-ink-soft">{inferredAnnotations}</pre>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         {/* Schema browser */}
@@ -517,6 +532,7 @@ export default function SqlWorkbench() {
 -- @x: column          -- @y: column
 -- @groupby: column    -- @stack: true | false | name
 -- @title: Title       -- @theme: powerbi-light | nyt | economist
+-- @rotate: 45          -- @xRotate: 45   -- @yRotate: 0
 -- @semantic: col: Type, other: Type
 -- @flint: {"chart_spec":{"title":"Custom"}}
 
