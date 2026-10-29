@@ -162,7 +162,7 @@ export function styleAxes(
     ? xAxis.some((a: any) => (a?.axisLabel?.rotate ?? 0) > 0)
     : (xAxis as any)?.axisLabel?.rotate > 0;
   const grid = option.grid && typeof option.grid === 'object' && !Array.isArray(option.grid)
-    ? { ...(option.grid as object), bottom: xRotated ? 60 : 28 }
+    ? { ...(option.grid as object), bottom: xRotated ? 60 : 48 }
     : option.grid;
 
   return { ...option, xAxis, yAxis, grid };
