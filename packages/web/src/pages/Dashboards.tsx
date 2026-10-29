@@ -168,29 +168,19 @@ export default function Dashboards() {
             </button>
           ))}
           {canWrite && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (newTag.trim()) {
+            <input
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newTag.trim()) {
+                  e.preventDefault();
                   createTagMutation.mutate(newTag.trim());
                   setNewTag('');
                 }
               }}
-              className="flex items-center gap-1"
-            >
-              <input
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                placeholder="New tag"
-                className="w-24 rounded-full border border-dashed border-line bg-surface px-2.5 py-0.5 text-[11px] text-ink placeholder:text-ink-faint"
-              />
-              <button
-                type="submit"
-                className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-[11px] font-medium text-ink-muted hover:border-line-strong hover:text-ink"
-              >
-                + New tag
-              </button>
-            </form>
+              placeholder="+ new tag"
+              className="w-28 rounded-full border border-dashed border-line bg-surface px-2.5 py-0.5 text-[11px] text-ink placeholder:text-ink-faint"
+            />
           )}
         </div>
       </div>
