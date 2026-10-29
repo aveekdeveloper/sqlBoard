@@ -296,18 +296,54 @@ export default function Dashboards() {
                 </select>
               )}
             </div>
-            <div className="mt-3 flex items-center justify-between">
+            <div className="mt-3 flex items-center justify-between gap-2">
               <span className="text-[10.5px] text-ink-faint">
                 {new Date(d.createdAt).toLocaleDateString()}
               </span>
-              {canWrite && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => { if (confirm('Delete this dashboard?')) deleteMutation.mutate(d.id); }}
-                  className="text-[11.5px] font-medium text-signal hover:underline"
+                  onClick={async () => {
+                    try {
+                      const code = await api.dashboards.exportCode(d.id);
+                      const blob = new Blob([code], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `dashboard-${d.id}.sql`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (e: any) {
+                      window.alert(e?.message || 'Export failed.');
+                    }
+                  }}
+                  className="text-[11.5px] font-medium text-ink-soft hover:text-ink"
                 >
-                  Delete
+                  Export
                 </button>
-              )}
+                {canWrite && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await api.dashboards.copy(d.id);
+                        window.location.href = `/dashboards/${res.dashboard.id}`;
+                      } catch (e: any) {
+                        window.alert(e?.message || 'Copy failed.');
+                      }
+                    }}
+                    className="text-[11.5px] font-medium text-ink-soft hover:text-ink"
+                  >
+                    Copy
+                  </button>
+                )}
+                {canWrite && (
+                  <button
+                    onClick={() => { if (confirm('Delete this dashboard?')) deleteMutation.mutate(d.id); }}
+                    className="text-[11.5px] font-medium text-signal hover:underline"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
