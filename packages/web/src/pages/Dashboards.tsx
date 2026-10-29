@@ -154,18 +154,34 @@ export default function Dashboards() {
             All
           </button>
           {allTags && allTags.map((t: any) => (
-            <button
+            <span
               key={t.id}
-              onClick={() => toggleTag(t.name)}
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
                 tagFilter.includes(t.name)
                   ? 'bg-accent-soft text-accent-ink'
                   : 'bg-paper text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
               }`}
               style={tagFilter.includes(t.name) && t.color ? { backgroundColor: t.color + '20', color: t.color } : undefined}
             >
-              {t.name}
-            </button>
+              <button type="button" onClick={() => toggleTag(t.name)} className="focus:outline-none">
+                {t.name}
+              </button>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete tag "${t.name}"? It will be removed from all dashboards and queries.`)) {
+                      api.tags.delete(t.id).then(() => qc.invalidateQueries({ queryKey: ['tags'] }));
+                    }
+                  }}
+                  className="ml-0.5 text-[9px] hover:text-signal"
+                  aria-label={`Delete ${t.name}`}
+                >
+                  ×
+                </button>
+              )}
+            </span>
           ))}
           {canWrite && (
             <input
