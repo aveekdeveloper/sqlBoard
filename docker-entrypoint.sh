@@ -1,15 +1,11 @@
 #!/bin/sh
 set -e
 
-# Seed only if not already seeded. The seed script has its own retry logic
-# (30 attempts, 2s each) to wait for sqld to be ready.
-if [ ! -f "$DATA_DIR/.seeded" ]; then
-  echo "Seeding initial data..."
-  if node /app/packages/api/scripts/seed.cjs; then
-    touch "$DATA_DIR/.seeded"
-  else
-    echo "Seeding failed, will retry on next start."
-    exit 1
-  fi
-fi
+# Seed initial data. The seed script is idempotent: it skips the admin user
+# if any users exist, skips the DuckDB connection if one exists, etc. Running
+# it on every start protects against stale `.seeded` markers or mismatched
+# volumes (e.g. a fresh Postgres volume paired with an old /data volume).
+echo "Seeding initial data..."
+node /app/packages/api/scripts/seed.cjs
+
 exec node /app/packages/api/dist/index.js
