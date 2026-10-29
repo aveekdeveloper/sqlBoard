@@ -144,7 +144,7 @@ export default function SqlWorkbench() {
       for (const key of ['viz', 'x', 'y', 'groupby', 'stack', 'title', 'theme']) {
         if (enc[key]) lines.push(`-- @${key}: ${enc[key]}`);
       }
-      setInferredAnnotations(lines.join('\\n'));
+      setInferredAnnotations(lines.join('\n'));
       renderChart(res, chartRef.current, chartInstance);
       const errCount = res.diagnostics.filter((d: any) => d.severity === 'error').length;
       const warnCount = res.diagnostics.filter((d: any) => d.severity === 'warning').length;
@@ -365,14 +365,6 @@ export default function SqlWorkbench() {
           {status}
         </div>
       )}
-      {inferredAnnotations && (
-        <div className="rounded-lg border border-line bg-paper px-3 py-2">
-          <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
-            Inferred annotations (copy to build on)
-          </div>
-          <pre className="overflow-auto text-[11px] text-ink-soft">{inferredAnnotations}</pre>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         {/* Schema browser */}
@@ -526,6 +518,14 @@ export default function SqlWorkbench() {
                 </button>
               )}
             </div>
+            {inferredAnnotations && (
+              <div className="mt-3 rounded-lg border border-line bg-paper px-3 py-2">
+                <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+                  Inferred annotations (copy to build on)
+                </div>
+                <pre className="overflow-auto text-[11px] text-ink-soft">{inferredAnnotations}</pre>
+              </div>
+            )}
             {showGrammar && (
               <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-paper p-3 text-[11px] text-ink-soft">
 {`-- @viz: bar | line | area | scatter | pie | heatmap
