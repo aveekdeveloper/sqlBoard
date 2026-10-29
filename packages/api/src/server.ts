@@ -123,6 +123,23 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   // store survives into route handlers; `enterWith` inside an async hook does not.
   app.addHook('onRequest', (request: any, reply: any, done: (err?: Error) => void) => {
     const resolve = async () => {
+      const shareToken = request.headers['x-share-token'] as string | undefined;
+      if (shareToken) {
+        const { dashboardShares } = await import('./db/schema.js');
+        const { eq } = await import('drizzle-orm');
+        const rows = await db.select().from(dashboardShares).where(eq(dashboardShares.token, shareToken));
+        const share = rows[0];
+        if (!share || share.revokedAt || (share.expiresAt && new Date(share.expiresAt).getTime() < Date.now())) {
+          throw new ApiError(401, 'INVALID_SHARE', 'Invalid or expired share link.');
+        }
+        request.share = share;
+        request.tenantResolved = true;
+        const trows = await db.select().from(tenants).where(eq(tenants.id, share.tenantId));
+        const t = trows[0];
+        if (!t) throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
+        return { id: t.id, slug: t.slug, name: t.name, domain: t.domain, plan: t.plan, status: t.status };
+      }
+
       request.tenantResolved = !config.tenancyEnabled;
       if (!config.tenancyEnabled) return null;
 
@@ -188,6 +205,15 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/')) return;
     if (PUBLIC_PATHS.has(path)) return;
+    // Public share links resolve their tenant from the token, not the header.
+    if (/^\/api\/share\/[^/]+$/.test(path)) return;
+
+    // Share-token authenticated requests (public dashboards) bypass normal auth.
+    if (request.share) {
+      request.user = { id: null, role: 'viewer', email: 'share' };
+      if (request.method === 'GET' || request.method === 'HEAD') return;
+      throw new ApiError(403, 'FORBIDDEN', 'Share links are read-only.');
+    }
 
     // Fail-closed: tenancy is enabled but no tenant could be resolved.
     if (config.tenancyEnabled && !request.tenantResolved) {

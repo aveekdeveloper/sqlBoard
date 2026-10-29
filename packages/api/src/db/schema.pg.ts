@@ -157,3 +157,13 @@ export const dashboardTags = pgTable('dashboard_tags', {
   dashboardId: integer('dashboard_id').notNull(),
   tagId: integer('tag_id').notNull(),
 });
+
+export const dashboardShares = pgTable('dashboard_shares', {
+  id: serial('id').primaryKey(),
+  dashboardId: integer('dashboard_id').notNull(),
+  tenantId: text('tenant_id').notNull(),
+  token: text('token').notNull().unique(),
+  expiresAt: text('expires_at'),
+  revokedAt: text('revoked_at'),
+  createdAt: text('created_at').notNull(),
+});

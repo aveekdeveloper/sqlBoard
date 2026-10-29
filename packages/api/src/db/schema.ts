@@ -137,6 +137,16 @@ export const dashboardTags = sqliteTable('dashboard_tags', {
   tagId: integer('tag_id').notNull(),
 });
 
+export const dashboardShares = sqliteTable('dashboard_shares', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  dashboardId: integer('dashboard_id').notNull(),
+  tenantId: text('tenant_id').notNull(),
+  token: text('token').notNull().unique(),
+  expiresAt: text('expires_at'),
+  revokedAt: text('revoked_at'),
+  createdAt: text('created_at').notNull(),
+});
+
 export const apiTokens = sqliteTable('api_tokens', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').notNull(),

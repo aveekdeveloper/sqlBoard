@@ -718,6 +718,32 @@ export default function DashboardDetail() {
                   <Loader2 size={10} className="animate-spin" /> saving layout
                 </span>
               )}
+              <a
+                href={`/dashboards/${dashboardId}/view`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+              >
+                Full page
+              </a>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await api.shares.create(dashboardId);
+                      const url = `${window.location.origin}/share/${res.token}`;
+                      await navigator.clipboard.writeText(url);
+                      window.alert(`Share link copied:\\n${url}`);
+                    } catch (e: any) {
+                      window.alert(e?.message || 'Could not create share link.');
+                    }
+                  }}
+                  className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+                >
+                  Share
+                </button>
+              )}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-ink-muted md:text-[10.5px]">
               {doc.description && (

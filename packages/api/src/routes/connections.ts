@@ -12,6 +12,7 @@ import {
   dashboardItems,
   dashboardVersions,
   dashboardTags,
+  dashboardShares,
   uploads,
 } from '../db/schema.js';
 import type { DrizzleDb } from '../db/client.js';
@@ -246,6 +247,12 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     if (!parsed.success) throw badRequest('Invalid query payload', parsed.error.flatten());
 
     const connectionId = Number(id);
+    if (request.share) {
+      const allowed = await deps.db.select({ connectionId: dashboardItems.connectionId }).from(dashboardItems).where(eq(dashboardItems.dashboardId, request.share.dashboardId));
+      if (!allowed.some((r: any) => r.connectionId === connectionId)) {
+        throw new ApiError(403, 'FORBIDDEN', 'Connection not part of shared dashboard.');
+      }
+    }
     const cacheKey = QueryCache.hashKey(connectionId, parsed.data.sql);
     const cached = deps.cache.get(cacheKey);
     if (cached) {
@@ -976,6 +983,59 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     );
     return { ...await dashboardResponse(deps.db, numericId), version: restored };
   });
+
+  // --- Share links (public read via token) ---
+  app.post('/api/dashboards/:id/share', async (request: any) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    const { row } = await readDashboard(deps.db, numericId);
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    if (row.tenantId !== tenant.id) throw notFound(`Dashboard ${id} not found`);
+
+    const expiresAt = (request.body as any)?.expiresAt ?? null;
+    const token = (await import('node:crypto')).randomBytes(24).toString('base64url');
+    const now = new Date().toISOString();
+    await deps.db.insert(dashboardShares).values({
+      dashboardId: numericId,
+      tenantId: tenant.id,
+      token,
+      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      revokedAt: null,
+      createdAt: now,
+    });
+    return { token, url: `/share/${token}` };
+  });
+
+  app.delete('/api/dashboards/:id/share/:token', async (request: any, reply: any) => {
+    const { id, token } = request.params as { id: string; token: string };
+    const numericId = Number(id);
+    const { currentTenant } = await import('../core/tenancy.js');
+    const tenant = currentTenant();
+    const rows = await deps.db.select().from(dashboardShares).where(eq(dashboardShares.token, token));
+    const share = rows[0];
+    if (!share || share.dashboardId !== numericId || share.tenantId !== tenant.id) {
+      throw notFound('Share not found');
+    }
+    await deps.db
+      .update(dashboardShares)
+      .set({ revokedAt: new Date().toISOString() })
+      .where(eq(dashboardShares.token, token));
+    reply.code(204);
+  });
+
+  app.get('/api/share/:token', async (request: any) => {
+    const { token } = request.params as { token: string };
+    const rows = await deps.db.select().from(dashboardShares).where(eq(dashboardShares.token, token));
+    const share = rows[0];
+    if (!share) throw notFound('Share not found');
+    if (share.revokedAt) throw new ApiError(410, 'SHARE_REVOKED', 'This share link has been revoked.');
+    if (share.expiresAt && new Date(share.expiresAt).getTime() < Date.now()) {
+      throw new ApiError(410, 'SHARE_EXPIRED', 'This share link has expired.');
+    }
+    const dashboard = await dashboardResponse(deps.db, share.dashboardId, share.tenantId);
+    return { dashboard, expiresAt: share.expiresAt };
+  });
 }
 
 export function registerUploadRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -1081,6 +1141,12 @@ export function registerCompileRoute(app: FastifyInstance, deps: RouteDeps): voi
 
     let data = body.data.data ?? [];
     if (body.data.connectionId && data.length === 0) {
+      if (request.share) {
+        const allowed = await deps.db.select({ connectionId: dashboardItems.connectionId }).from(dashboardItems).where(eq(dashboardItems.dashboardId, request.share.dashboardId));
+        if (!allowed.some((r: any) => r.connectionId === body.data.connectionId)) {
+          throw new ApiError(403, 'FORBIDDEN', 'Connection not part of shared dashboard.');
+        }
+      }
       const engine = await deps.engineFactory.forConnectionId(body.data.connectionId);
       const result = await engine.run(body.data.sql);
       data = result.rows;
