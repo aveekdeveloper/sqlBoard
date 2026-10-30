@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { DrizzleDb } from '../db/client.js';
 import { getMcpContext, setMcpContext } from './auth.js';
+import { ROLE_RANK } from '../auth/roles.js';
 import { currentTenant } from '../core/tenancy.js';
 import { connections, dashboards, savedQueries, tenants, users } from '../db/schema.js';
 import {
@@ -137,7 +138,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     config: z.record(z.unknown()).describe('Connection-specific config (host, port, database, user, password, etc.)'),
   }, async ({ name, type, config }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    if (ROLE_RANK[ctx.user.role] < ROLE_RANK.member) return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
     try {
       const { encryptJson } = await import('../crypto.js');
       const configEnc = encryptJson({ ...config, name, type }, deps.secretKey);
@@ -149,9 +150,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
     }
   });
 
-  server.tool('create_saved_query', 'Save a SQL query for reuse. Requires member role.', { name: z.string().min(1), connectionId: z.number().int(), sql: z.string().min(1) }, async ({ name, connectionId, sql }, extra) => {
+  server.tool('create_saved_query', 'Save a SQL query for reuse. Requires analyst role.', { name: z.string().min(1), connectionId: z.number().int(), sql: z.string().min(1) }, async ({ name, connectionId, sql }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    if (ROLE_RANK[ctx.user.role] < ROLE_RANK.analyst) return { content: [{ type: 'text', text: 'Requires analyst role' }], isError: true };
     try {
       const now = new Date().toISOString();
       const [inserted] = await deps.db.insert(savedQueries).values({ name, connectionId, sql, latestVersion: 1, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning();
@@ -161,9 +162,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
     }
   });
 
-  server.tool('create_dashboard', 'Create a new dashboard. Requires member role.', { name: z.string().min(1), description: z.string().optional() }, async ({ name, description }, extra) => {
+  server.tool('create_dashboard', 'Create a new dashboard. Requires analyst role.', { name: z.string().min(1), description: z.string().optional() }, async ({ name, description }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    if (ROLE_RANK[ctx.user.role] < ROLE_RANK.analyst) return { content: [{ type: 'text', text: 'Requires analyst role' }], isError: true };
     try {
       const now = new Date().toISOString();
       const [inserted] = await deps.db.insert(dashboards).values({ name, description: description ?? null, tenantId: ctx.tenant.id, createdAt: now, updatedAt: now }).returning();
@@ -175,7 +176,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
 
   // --- Dashboard state tools (member+) ---
 
-  server.tool('apply_dashboard_state', 'Replace a dashboard blocks and optionally name/description/filters/theme/colors, recording a new version. Requires member role.', {
+  server.tool('apply_dashboard_state', 'Replace a dashboard blocks and optionally name/description/filters/theme/colors, recording a new version. Requires analyst role.', {
     id: z.number().int().describe('Dashboard ID'),
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
@@ -201,7 +202,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     baseVersion: z.number().int().nonnegative().optional(),
   }, async (args: any, extra: any) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    if (ROLE_RANK[ctx.user.role] < ROLE_RANK.analyst) return { content: [{ type: 'text', text: 'Requires analyst role' }], isError: true };
     try {
       await readDashboard(deps.db, args.id, ctx.tenant.id);
       const parsed = ApplyDashboardStateSchema.safeParse(args);
@@ -213,13 +214,13 @@ export function createMcpServer(deps: McpDeps): McpServer {
     }
   });
 
-  server.tool('commit_dashboard_version', 'Commit the current dashboard state as a new manual version. Requires member role.', {
+  server.tool('commit_dashboard_version', 'Commit the current dashboard state as a new manual version. Requires analyst role.', {
     id: z.number().int().describe('Dashboard ID'),
     message: z.string().min(1).max(200),
     baseVersion: z.number().int().nonnegative().optional(),
   }, async ({ id, message, baseVersion }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role === 'viewer') return { content: [{ type: 'text', text: 'Requires member role' }], isError: true };
+    if (ROLE_RANK[ctx.user.role] < ROLE_RANK.analyst) return { content: [{ type: 'text', text: 'Requires analyst role' }], isError: true };
     try {
       const { snapshot } = await readDashboard(deps.db, id, ctx.tenant.id);
       const parsed = CommitDashboardSchema.safeParse({ message, baseVersion });
@@ -234,21 +235,21 @@ export function createMcpServer(deps: McpDeps): McpServer {
 
   // --- Tenant management (admin only) ---
 
-  server.tool('list_tenants', 'List all tenants. Requires admin role.', {}, async (_args: any, extra: any) => {
+  server.tool('list_tenants', 'List all tenants. Requires platform admin role.', {}, async (_args: any, extra: any) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role !== 'admin') return { content: [{ type: 'text', text: 'Requires admin role' }], isError: true };
+    if (ctx.user.role !== 'platform_admin') return { content: [{ type: 'text', text: 'Requires platform admin role' }], isError: true };
     const rows = await deps.db.select().from(tenants);
     return { content: [{ type: 'text', text: JSON.stringify(rows.filter((t: any) => t.status !== 'deleted').map((t: any) => ({ id: t.id, slug: t.slug, name: t.name, plan: t.plan, status: t.status })), null, 2) }] };
   });
 
-  server.tool('create_tenant', 'Create a new tenant with an admin user. Requires admin role.', {
+  server.tool('create_tenant', 'Create a new tenant with an admin user. Requires platform admin role.', {
     slug: z.string().min(1).max(64),
     name: z.string().min(1).max(200),
     adminEmail: z.string().email(),
     adminPassword: z.string().min(8),
   }, async ({ slug, name, adminEmail, adminPassword }, extra) => {
     const ctx = getMcpContext(extra?.sessionId);
-    if (ctx.user.role !== 'admin') return { content: [{ type: 'text', text: 'Requires admin role' }], isError: true };
+    if (ctx.user.role !== 'platform_admin') return { content: [{ type: 'text', text: 'Requires platform admin role' }], isError: true };
     try {
       const { randomUUID } = await import('node:crypto');
       const { scryptSync, randomBytes } = await import('node:crypto');
@@ -261,7 +262,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       await deps.db.insert(tenants).values({ id, slug, name, plan: 'free', status: 'active', ownerEmail: adminEmail, createdAt: now, updatedAt: now });
       const salt = randomBytes(16).toString('hex');
       const hash = scryptSync(adminPassword, salt, 64).toString('hex');
-      await deps.db.insert(users).values({ email: adminEmail, passwordHash: `${salt}:${hash}`, role: 'admin', tenantId: id, createdAt: now });
+      await deps.db.insert(users).values({ email: adminEmail, passwordHash: `${salt}:${hash}`, role: 'tenant_admin', tenantId: id, createdAt: now });
       return { content: [{ type: 'text', text: JSON.stringify({ id, slug, name, adminEmail }, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };

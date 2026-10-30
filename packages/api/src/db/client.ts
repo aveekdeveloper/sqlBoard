@@ -68,7 +68,7 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
   }
 
   const bootstrapSql = [
-    `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', domain TEXT UNIQUE, plan TEXT NOT NULL DEFAULT 'free', status TEXT NOT NULL DEFAULT 'active', owner_email TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', domain TEXT UNIQUE, plan TEXT NOT NULL DEFAULT 'free', status TEXT NOT NULL DEFAULT 'active', kind TEXT NOT NULL DEFAULT 'tenant', owner_email TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member', tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS connections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, config_enc TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TEXT NOT NULL)`,
@@ -98,6 +98,14 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
 
   const db = drizzle(client);
 
+  // Migration: add tenants.kind column (idempotent) BEFORE any select uses it.
+  try { await client.execute("ALTER TABLE tenants ADD COLUMN kind TEXT NOT NULL DEFAULT 'tenant'"); } catch { /* exists */ }
+  await client.execute("UPDATE tenants SET kind='platform' WHERE slug='default'");
+  await client.execute("UPDATE users SET role='platform_admin' WHERE role='admin' AND tenant_id='00000000-0000-0000-0000-000000000000'");
+  await client.execute("UPDATE users SET role='tenant_admin' WHERE role='admin' AND tenant_id!='00000000-0000-0000-0000-000000000000'");
+  await client.execute("UPDATE api_tokens SET scope='platform_admin' WHERE scope='admin' AND tenant_id='00000000-0000-0000-0000-000000000000'");
+  await client.execute("UPDATE api_tokens SET scope='tenant_admin' WHERE scope='admin' AND tenant_id!='00000000-0000-0000-0000-000000000000'");
+
   // Seed default tenant if none exists
   const existingTenants = await db.select().from(tenants);
   if (existingTenants.length === 0) {
@@ -108,6 +116,7 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
       domain: null,
       plan: 'free',
       status: 'active',
+      kind: 'platform',
       ownerEmail: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -150,7 +159,7 @@ async function openPostgres(config: SqlboardConfig): Promise<OpenedDatabase> {
 
   // Bootstrap tables (Postgres syntax)
   const bootstrapSql = [
-    `CREATE TABLE IF NOT EXISTS tenants (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', domain TEXT UNIQUE, plan TEXT NOT NULL DEFAULT 'free', status TEXT NOT NULL DEFAULT 'active', owner_email TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS tenants (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', domain TEXT UNIQUE, plan TEXT NOT NULL DEFAULT 'free', status TEXT NOT NULL DEFAULT 'active', kind TEXT NOT NULL DEFAULT 'tenant', owner_email TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member', tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS sessions (id SERIAL PRIMARY KEY, token TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS connections (id SERIAL PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, config_enc TEXT NOT NULL, tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
@@ -178,6 +187,14 @@ async function openPostgres(config: SqlboardConfig): Promise<OpenedDatabase> {
     await pool.query(stmt);
   }
 
+  // Migration: add tenants.kind column (idempotent) BEFORE any select uses it.
+  await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'tenant'");
+  await pool.query("UPDATE tenants SET kind='platform' WHERE slug='default'");
+  await pool.query("UPDATE users SET role='platform_admin' WHERE role='admin' AND tenant_id='00000000-0000-0000-0000-000000000000'");
+  await pool.query("UPDATE users SET role='tenant_admin' WHERE role='admin' AND tenant_id!='00000000-0000-0000-0000-000000000000'");
+  await pool.query("UPDATE api_tokens SET scope='platform_admin' WHERE scope='admin' AND tenant_id='00000000-0000-0000-0000-000000000000'");
+  await pool.query("UPDATE api_tokens SET scope='tenant_admin' WHERE scope='admin' AND tenant_id!='00000000-0000-0000-0000-000000000000'");
+
   // Seed default tenant if none exists
   const existingTenants = await db.select().from(pgSchema.tenants);
   if (existingTenants.length === 0) {
@@ -188,6 +205,7 @@ async function openPostgres(config: SqlboardConfig): Promise<OpenedDatabase> {
       domain: null,
       plan: 'free',
       status: 'active',
+      kind: 'platform',
       ownerEmail: null,
       createdAt: new Date(),
       updatedAt: new Date(),

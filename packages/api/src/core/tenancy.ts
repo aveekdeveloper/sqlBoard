@@ -8,6 +8,7 @@ export interface TenantContext {
   domain: string | null;  // app host for this tenant
   plan: string;     // free, pro, enterprise
   status: string;   // active, suspended, deleted
+  kind: string;     // 'platform' | 'tenant'
 }
 
 export const DEFAULT_TENANT: TenantContext = {
@@ -17,6 +18,7 @@ export const DEFAULT_TENANT: TenantContext = {
   domain: null,
   plan: 'free',
   status: 'active',
+  kind: 'platform',
 };
 
 const _currentTenant = new AsyncLocalStorage<TenantContext>();
@@ -35,6 +37,10 @@ export async function runWithTenantAsync<T>(tenant: TenantContext, fn: () => Pro
 
 export function isDefaultTenant(tenant: TenantContext): boolean {
   return tenant.slug === 'default';
+}
+
+export function isPlatformTenant(tenant: TenantContext): boolean {
+  return tenant.kind === 'platform';
 }
 
 export function normalizeHost(host: string): string {
@@ -73,6 +79,7 @@ export function createTenantContext(partial: {
   domain?: string | null;
   plan?: string;
   status?: string;
+  kind?: string;
 }): TenantContext {
   return {
     id: partial.id ?? randomUUID(),
@@ -81,5 +88,6 @@ export function createTenantContext(partial: {
     domain: partial.domain ?? null,
     plan: partial.plan ?? 'free',
     status: partial.status ?? 'active',
+    kind: partial.kind ?? 'tenant',
   };
 }

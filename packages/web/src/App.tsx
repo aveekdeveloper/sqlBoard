@@ -119,7 +119,7 @@ function TenantSwitcher({ role }: { role: string | null }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (role !== 'admin') return;
+    if (role !== 'platform_admin') return;
     let cancelled = false;
     api.tenants
       .list()

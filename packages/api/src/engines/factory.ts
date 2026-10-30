@@ -25,6 +25,7 @@ export interface ConnectionRow {
   name: string;
   type: string;
   configEnc: string;
+  tenantId: string;
   createdAt: string;
 }
 
@@ -33,7 +34,7 @@ export class EngineFactory {
 
   constructor(private readonly deps: EngineFactoryDeps) {}
 
-  async forConnectionId(connectionId: number): Promise<QueryEngine> {
+  async forConnectionId(connectionId: number, tenantId?: string): Promise<QueryEngine> {
     const cached = this.engines.get(connectionId);
     if (cached) return cached;
 
@@ -45,6 +46,7 @@ export class EngineFactory {
 
     const row = rows[0];
     if (!row) throw notFound(`Connection ${connectionId} not found`);
+    if (tenantId && row.tenantId !== tenantId) throw notFound(`Connection ${connectionId} not found`);
 
     const engine = await this.build(row.type, row.configEnc);
     this.engines.set(connectionId, engine);

@@ -11,8 +11,26 @@ import { useAuth } from '../auth.js';
 
 const SCOPE_LABEL: Record<ApiTokenScope, string> = {
   viewer: 'Viewer — read only',
-  member: 'Member — read and write',
-  admin: 'Admin — full access',
+  analyst: 'Analyst — read + save queries/dashboards',
+  member: 'Member — read, write, connections',
+  tenant_admin: 'Tenant admin — users, tokens, audit',
+  platform_admin: 'Platform admin — tenants',
+};
+
+const ROLE_RANK_CLIENT: Record<ApiTokenScope, number> = {
+  viewer: 0,
+  analyst: 1,
+  member: 2,
+  tenant_admin: 3,
+  platform_admin: 4,
+};
+
+const ROLE_CAPABILITIES: Record<ApiTokenScope, string[]> = {
+  viewer: ['Read dashboards', 'Run queries', 'Preview tables'],
+  analyst: ['Viewer +', 'Save queries/dashboards', 'Share dashboards'],
+  member: ['Analyst +', 'Create/edit/delete connections', 'Validate connections'],
+  tenant_admin: ['Member +', 'Manage users', 'Revoke tokens', 'Read audit log'],
+  platform_admin: ['Tenant admin +', 'Create/update/delete tenants', 'Platform tokens (platform tenant only)'],
 };
 
 function formatDate(value: string | null): string {
@@ -63,9 +81,10 @@ export default function Settings() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tokens'] }),
   });
 
-  const scopeOptions: ApiTokenScope[] = ['viewer'];
-  if (role === 'member' || role === 'admin') scopeOptions.push('member');
-  if (role === 'admin') scopeOptions.push('admin');
+  const userRank = role ? (ROLE_RANK_CLIENT[role as ApiTokenScope] ?? 0) : 0;
+  const scopeOptions: ApiTokenScope[] = (['viewer', 'analyst', 'member', 'tenant_admin', 'platform_admin'] as ApiTokenScope[]).filter(
+    (r) => ROLE_RANK_CLIENT[r] <= userRank,
+  );
 
   async function copyToken() {
     if (!created) return;
@@ -105,6 +124,31 @@ export default function Settings() {
             Viewers can read dashboards and run queries. Editing requires the member role.
           </p>
         )}
+      </section>
+
+      <section className="rounded-xl border border-line bg-surface p-4 shadow-card">
+        <h3 className="text-[13px] font-semibold text-ink">Roles & permissions</h3>
+        <p className="mt-0.5 text-[11.5px] text-ink-muted">
+          Fixed role ladder. A token can never exceed your own role.
+        </p>
+        <div className="mt-3 overflow-hidden rounded-lg border border-line">
+          <table className="w-full border-collapse text-left text-[11.5px]">
+            <thead className="bg-paper text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+              <tr>
+                <th className="px-3 py-2 font-medium">Role</th>
+                <th className="px-3 py-2 font-medium">Capabilities</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(['viewer', 'analyst', 'member', 'tenant_admin', 'platform_admin'] as ApiTokenScope[]).map((r) => (
+                <tr key={r} className="border-t border-line">
+                  <td className="px-3 py-2 font-medium text-ink">{SCOPE_LABEL[r]}</td>
+                  <td className="px-3 py-2 text-ink-muted">{ROLE_CAPABILITIES[r].join(' · ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="rounded-xl border border-line bg-surface p-4 shadow-card">

@@ -23,7 +23,7 @@ import { registerTenantRoutes } from './routes/tenants.js';
 import { registerTagRoutes } from './routes/tags.js';
 import { registerWorkbookRoutes } from './routes/workbooks.js';
 import { registerMcpRoutes } from './mcp/transport.js';
-import { ROLE_RANK } from './auth/roles.js';
+import { ROLE_RANK, type Role } from './auth/roles.js';
 import { QueryCache } from './cache/query-cache.js';
 import { createStorage } from './storage/index.js';
 import { ApiError } from './errors.js';
@@ -44,11 +44,27 @@ const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login', '/api/auth/logou
 // Viewers may still mint read-only tokens and revoke them.
 const SELF_SERVICE_WRITES = [/^\/api\/tokens$/, /^\/api\/tokens\/\d+$/];
 
-// POSTs that read but never persist: query execution and compilation.
-const READ_ONLY_POSTS = [
+// POSTs that read but never persist: skip audit noise.
+const AUDIT_SKIP_POSTS = [
   /^\/api\/compile$/,
   /^\/api\/connections\/\d+\/query$/,
   /^\/api\/connections\/\d+\/test$/,
+];
+
+// Minimum role required for each write route. Unlisted writes default to 'member'.
+const WRITE_MIN_ROLE: { pattern: RegExp; minRole: Role }[] = [
+  { pattern: /^\/api\/compile$/, minRole: 'viewer' },
+  { pattern: /^\/api\/connections\/\d+\/query$/, minRole: 'viewer' },
+  { pattern: /^\/api\/connections\/\d+\/test$/, minRole: 'viewer' },
+  { pattern: /^\/api\/connections$/, minRole: 'member' },
+  { pattern: /^\/api\/connections\/\d+$/, minRole: 'member' },
+  { pattern: /^\/api\/connections\/\d+\/validate$/, minRole: 'member' },
+  { pattern: /^\/api\/saved-queries$/, minRole: 'analyst' },
+  { pattern: /^\/api\/saved-queries\/\d+$/, minRole: 'analyst' },
+  { pattern: /^\/api\/dashboards/, minRole: 'analyst' },
+  { pattern: /^\/api\/workbooks/, minRole: 'analyst' },
+  { pattern: /^\/api\/tags/, minRole: 'analyst' },
+  { pattern: /^\/api\/uploads/, minRole: 'member' },
 ];
 
 export async function buildServer(config: SqlboardConfig): Promise<ServerContext> {
@@ -138,7 +154,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
         const trows = await db.select().from(tenants).where(eq(tenants.id, share.tenantId));
         const t = trows[0];
         if (!t) throw new ApiError(404, 'TENANT_NOT_FOUND', 'Unknown tenant');
-        return { id: t.id, slug: t.slug, name: t.name, domain: t.domain, plan: t.plan, status: t.status };
+        return { id: t.id, slug: t.slug, name: t.name, domain: t.domain, plan: t.plan, status: t.status, kind: t.kind ?? 'tenant' };
       }
 
       request.tenantResolved = !config.tenancyEnabled;
@@ -161,6 +177,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
           domain: t.domain,
           plan: t.plan,
           status: t.status,
+          kind: t.kind ?? 'tenant',
         };
       }
 
@@ -181,6 +198,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
           domain: t.domain,
           plan: t.plan,
           status: t.status,
+          kind: t.kind ?? 'tenant',
         };
       }
       return null;
@@ -227,10 +245,12 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
     if (request.method === 'GET' || request.method === 'HEAD') return;
 
     const selfService = SELF_SERVICE_WRITES.some((pattern: any) => pattern.test(path));
-    const readOnlyPost = READ_ONLY_POSTS.some((pattern: any) => pattern.test(path));
-    if (readOnlyPost) return;
-    if (!selfService && ROLE_RANK[user.role] < ROLE_RANK.member) {
-      throw new ApiError(403, 'FORBIDDEN', 'this action requires the member role');
+    if (selfService) return;
+
+    const entry = WRITE_MIN_ROLE.find((e) => e.pattern.test(path));
+    const minRole = entry ? entry.minRole : 'member';
+    if (ROLE_RANK[user.role] < ROLE_RANK[minRole]) {
+      throw new ApiError(403, 'FORBIDDEN', `this action requires the ${minRole} role`);
     }
   });
 
@@ -239,7 +259,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/') || path.startsWith('/api/auth/')) return;
     if (reply.statusCode >= 400) return;
-    if (READ_ONLY_POSTS.some((pattern: any) => pattern.test(path))) return;
+    if (AUDIT_SKIP_POSTS.some((pattern: any) => pattern.test(path))) return;
 
     const segments = path.split('/').filter(Boolean);
     try {

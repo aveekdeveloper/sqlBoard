@@ -14,6 +14,7 @@ export const tenants = pgTable('tenants', {
   domain: text('domain').unique(),
   plan: text('plan').notNull().default('free'),
   status: text('status').notNull().default('active'),
+  kind: text('kind').notNull().default('tenant'),
   ownerEmail: text('owner_email'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

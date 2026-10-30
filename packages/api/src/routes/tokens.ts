@@ -5,11 +5,11 @@ import type { DrizzleDb } from '../db/client.js';
 import { apiTokens } from '../db/schema.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
 import { generateApiToken, hashApiToken, type AuthUser } from '../auth/session.js';
-import { ROLE_RANK, toRole } from '../auth/roles.js';
+import { ROLE_RANK, toRole, can } from '../auth/roles.js';
 
 const CreateTokenSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  scope: z.enum(['viewer', 'member', 'admin']).optional(),
+  scope: z.enum(['viewer', 'analyst', 'member', 'tenant_admin', 'platform_admin']).optional(),
   expiresInDays: z.number().int().min(1).max(3650).nullable().optional(),
 });
 
@@ -51,6 +51,12 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
     const scope = parsed.data.scope ?? 'viewer';
     if (ROLE_RANK[scope] > ROLE_RANK[user.role]) {
       throw badRequest(`A ${user.role} cannot create a ${scope} token`);
+    }
+    if (scope === 'platform_admin') {
+      const { currentTenant } = await import('../core/tenancy.js');
+      if (currentTenant().kind !== 'platform') {
+        throw badRequest('platform_admin tokens can only be created in the platform tenant');
+      }
     }
 
     const token = generateApiToken();
@@ -102,7 +108,7 @@ export function registerTokenRoutes(app: FastifyInstance, deps: { db: DrizzleDb 
     if (token.tenantId !== currentTenant().id) {
       throw notFound(`API token ${id} not found`);
     }
-    if (token.userId !== user.id && user.role !== 'admin') {
+    if (token.userId !== user.id && !can(user.role, 'token:revoke:any')) {
       throw new ApiError(403, 'FORBIDDEN', 'cannot revoke another user’s token');
     }
 

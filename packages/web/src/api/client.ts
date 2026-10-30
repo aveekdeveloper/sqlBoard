@@ -58,7 +58,7 @@ export function setTenant(tenant: any) {
 export interface SessionUser {
   id: number;
   email: string;
-  role: 'admin' | 'member' | 'viewer';
+  role: 'platform_admin' | 'tenant_admin' | 'member' | 'analyst' | 'viewer';
 }
 
 export type ApiTokenScope = SessionUser['role'];

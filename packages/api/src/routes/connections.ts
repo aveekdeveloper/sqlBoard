@@ -136,7 +136,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
       .from(connections)
       .where(eq(connections.id, numericId))
     const existing = rows[0];
-    if (!existing) throw notFound(`Connection ${id} not found`);
+    if (!existing || existing.tenantId !== currentTenant().id) throw notFound(`Connection ${id} not found`);
 
     const parsed = UpdateConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid connection update', parsed.error.flatten());
@@ -182,7 +182,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
       .select()
       .from(connections)
       .where(eq(connections.id, numericId))
-    if (rows.length === 0) throw notFound(`Connection ${id} not found`);
+    if (rows.length === 0 || rows[0].tenantId !== currentTenant().id) throw notFound(`Connection ${id} not found`);
     await deps.engineFactory.closeConnection(numericId);
     deps.cache.invalidateConnection(numericId);
     await deps.db.delete(connections).where(eq(connections.id, numericId));
@@ -213,7 +213,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     const { id } = request.params as { id: string };
     const numericId = Number(id);
     try {
-      const engine = await deps.engineFactory.forConnectionId(numericId);
+      const engine = await deps.engineFactory.forConnectionId(numericId, currentTenant().id);
       const tables = await engine.listTables();
       return { ok: true, tableCount: tables.length, tables: tables.slice(0, 50) };
     } catch (error) {
@@ -224,7 +224,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
   app.get('/api/connections/:id/tables', async (request: any) => {
     const { id } = request.params as { id: string };
     try {
-      const engine = await deps.engineFactory.forConnectionId(Number(id));
+      const engine = await deps.engineFactory.forConnectionId(Number(id), currentTenant().id);
       return await engine.listTables();
     } catch (error) {
       throw new ApiError(500, 'CONNECTION_FAILED', (error as Error).message);
@@ -234,7 +234,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
   app.get('/api/connections/:id/tables/:name/preview', async (request: any) => {
     const { id, name } = request.params as { id: string; name: string };
     try {
-      const engine = await deps.engineFactory.forConnectionId(Number(id));
+      const engine = await deps.engineFactory.forConnectionId(Number(id), currentTenant().id);
       return await engine.preview(name);
     } catch (error) {
       throw new ApiError(500, 'CONNECTION_FAILED', (error as Error).message);
@@ -265,7 +265,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
       };
     }
 
-    const engine = await deps.engineFactory.forConnectionId(connectionId);
+    const engine = await deps.engineFactory.forConnectionId(connectionId, currentTenant().id);
     const result = await engine.run(parsed.data.sql, { maxRows: parsed.data.maxRows });
 
     if (result.rows.length <= 10000) {
@@ -1177,7 +1177,7 @@ export function registerCompileRoute(app: FastifyInstance, deps: RouteDeps): voi
           throw new ApiError(403, 'FORBIDDEN', 'Connection not part of shared dashboard.');
         }
       }
-      const engine = await deps.engineFactory.forConnectionId(body.data.connectionId);
+      const engine = await deps.engineFactory.forConnectionId(body.data.connectionId, currentTenant().id);
       const result = await engine.run(body.data.sql);
       data = result.rows;
     }

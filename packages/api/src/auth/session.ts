@@ -7,6 +7,12 @@ import { ApiError, badRequest } from '../errors.js';
 import { currentTenant } from '../core/tenancy.js';
 import { ROLE_RANK, effectiveRole, toRole, type Role } from './roles.js';
 
+function resolveStoredRole(stored: unknown): Role {
+  const base = toRole(stored);
+  if (stored === 'admin' && currentTenant().kind === 'platform') return 'platform_admin';
+  return base;
+}
+
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LAST_USED_THROTTLE_MS = 60 * 1000;
 
@@ -74,7 +80,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: DrizzleDb): void {
     reply.code(200);
     return {
       token,
-      user: { id: user.id, email: user.email, role: toRole(user.role) },
+      user: { id: user.id, email: user.email, role: resolveStoredRole(user.role) },
       tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
       expiresAt,
     };
@@ -162,7 +168,7 @@ export async function requireUser(
   const user = userRows.find((u: any) => u.tenantId === currentTenant().id);
   if (!user) throw new ApiError(403, 'FORBIDDEN', 'not a member of this tenant');
 
-  return { id: user.id, email: user.email, role: toRole(user.role) };
+  return { id: user.id, email: user.email, role: resolveStoredRole(user.role) };
 }
 
 async function resolveApiToken(db: DrizzleDb, token: string): Promise<AuthUser> {
@@ -199,7 +205,7 @@ async function resolveApiToken(db: DrizzleDb, token: string): Promise<AuthUser> 
   return {
     id: user.id,
     email: user.email,
-    role: effectiveRole(user.role, apiToken.scope),
+    role: effectiveRole(resolveStoredRole(user.role), apiToken.scope),
     tokenId: apiToken.id,
   };
 }

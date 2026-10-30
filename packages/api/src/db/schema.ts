@@ -114,6 +114,7 @@ export const tenants = sqliteTable('tenants', {
   domain: text('domain').unique(),
   plan: text('plan').notNull().default('free'),
   status: text('status').notNull().default('active'),
+  kind: text('kind').notNull().default('tenant'),
   ownerEmail: text('owner_email'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

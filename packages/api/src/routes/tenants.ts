@@ -15,7 +15,7 @@ const CreateTenantSchema = z.object({
   plan: z.enum(['free', 'pro', 'enterprise']).default('free'),
   adminEmail: z.string().email(),
   adminPassword: z.string().min(8),
-  adminRole: z.enum(['admin', 'member']).default('admin'),
+  adminRole: z.enum(['tenant_admin', 'member']).default('tenant_admin'),
 });
 
 const UpdateTenantSchema = z.object({
@@ -26,8 +26,11 @@ const UpdateTenantSchema = z.object({
 });
 
 function requireAdmin(request: FastifyRequest) {
-  if (!request.user || request.user.role !== 'admin') {
-    throw new ApiError(403, 'FORBIDDEN', 'admin role required');
+  if (!request.user || request.user.role !== 'platform_admin') {
+    throw new ApiError(403, 'FORBIDDEN', 'platform admin role required');
+  }
+  if (currentTenant().kind !== 'platform') {
+    throw new ApiError(403, 'FORBIDDEN', 'platform admin actions are only available in the platform tenant');
   }
 }
 
@@ -103,6 +106,7 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
       domain: data.domain ?? null,
       plan: data.plan,
       status: 'active',
+      kind: 'tenant',
       ownerEmail: data.adminEmail,
       createdAt: now,
       updatedAt: now,
@@ -193,6 +197,7 @@ export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb
     const { id } = request.params as { id: string };
     const rows = await deps.db.select().from(tenants).where(eq(tenants.id, id));
     if (rows.length === 0) throw notFound(`Tenant ${id} not found`);
+    if (rows[0].kind === 'platform') throw new ApiError(403, 'FORBIDDEN', 'cannot delete the platform tenant');
 
     const now = new Date().toISOString();
     await deps.db.update(tenants).set({ status: 'deleted', updatedAt: now }).where(eq(tenants.id, id));
