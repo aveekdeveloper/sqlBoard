@@ -9,6 +9,17 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import HistoryDialog from '../dashboard/HistoryDialog.js';
 import { styleAxes, styleBars } from '../dashboard/ChartBody.js';
+import MetricBody from '../dashboard/MetricBody.js';
+import { metricConfig } from '@sqlboard/shared';
+
+function parseAnnotations(sql: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of (sql || '').split('\\n')) {
+    const match = line.match(/^--\\s*@([a-zA-Z0-9_]+):\\s*(.*?)\\s*$/);
+    if (match) result[match[1].toLowerCase()] = match[2];
+  }
+  return result;
+}
 
 export default function SqlWorkbench() {
   const { canWrite } = useAuth();
@@ -33,7 +44,14 @@ export default function SqlWorkbench() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [expanded, setExpanded] = useState<'preview' | 'results' | 'chart' | null>(null);
-  const [activeTab, setActiveTab] = useState<'results' | 'chart'>('results');
+  const [activeTab, setActiveTab] = useState<'results' | 'chart' | 'metric'>('results');
+  const [vizMode, setVizMode] = useState<'chart' | 'metric'>('chart');
+
+  useEffect(() => {
+    const ann = parseAnnotations(sqlText);
+    if (ann.type === 'metric' || ann.metric) setVizMode('metric');
+    else setVizMode('chart');
+  }, [sqlText]);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
   const expandedChartRef = useRef<HTMLDivElement>(null);
@@ -562,6 +580,16 @@ first category->series, default bar/line.`}
                 >
                   Chart
                 </button>
+                <button
+                  onClick={() => setActiveTab('metric')}
+                  className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                    activeTab === 'metric'
+                      ? 'bg-accent-soft text-accent-ink'
+                      : 'text-ink-muted hover:bg-[#f1eee7] hover:text-ink'
+                  }`}
+                >
+                  Metric
+                </button>
               </div>
               <button
                 onClick={() => setExpanded(activeTab === 'chart' ? 'chart' : 'results')}
@@ -602,6 +630,23 @@ first category->series, default bar/line.`}
                       ))}
                     </tbody>
                   </table>
+                )}
+              </div>
+            ) : activeTab === 'metric' ? (
+              <div className="h-64 w-full md:h-80">
+                {connectionId ? (
+                  <MetricBody
+                    item={{
+                      title: 'Metric',
+                      sql: sqlText,
+                      connectionId,
+                      blockType: 'metric',
+                      config: metricConfig(parseAnnotations(sqlText)),
+                      layout: { x: 0, y: 0, w: 12, h: 8 },
+                    }}
+                  />
+                ) : (
+                  <p className="p-4 text-[12px] text-ink-faint">Select a connection first.</p>
                 )}
               </div>
             ) : (

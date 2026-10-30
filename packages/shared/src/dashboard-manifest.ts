@@ -123,7 +123,7 @@ function parseFormat(value: string | undefined): Record<string, MetricFormat> | 
   return Object.keys(output).length > 0 ? output : undefined;
 }
 
-function metricConfig(annotations: Record<string, string>): Record<string, unknown> {
+export function metricConfig(annotations: Record<string, string>): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   if (annotations.metric) config.metricColumn = annotations.metric;
   if (annotations.prior) config.priorColumn = annotations.prior;
