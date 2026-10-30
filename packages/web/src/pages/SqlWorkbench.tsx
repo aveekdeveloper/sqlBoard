@@ -21,6 +21,23 @@ function parseAnnotations(sql: string): Record<string, string> {
   return result;
 }
 
+function buildMetricAnnotations(sql: string): string {
+  const cfg = metricConfig(parseAnnotations(sql)) as any;
+  const lines: string[] = ['-- @type: metric'];
+  if (cfg.metricColumn) lines.push(`-- @metric: ${cfg.metricColumn}`);
+  if (cfg.priorColumn) lines.push(`-- @prior: ${cfg.priorColumn}`);
+  if (cfg.sparklineColumn) lines.push(`-- @sparkline: ${cfg.sparklineColumn}`);
+  if (cfg.format) lines.push(`-- @format: ${cfg.format}`);
+  if (cfg.higherIsBetter !== undefined) lines.push(`-- @higherIsBetter: ${cfg.higherIsBetter}`);
+  if (cfg.target?.value !== undefined) {
+    lines.push(`-- @target: ${cfg.target.value}`);
+    lines.push(`-- @targetDirection: ${cfg.target.direction ?? 'above'}`);
+    if (cfg.target.thresholds?.amber !== undefined) lines.push(`-- @targetAmber: ${cfg.target.thresholds.amber}`);
+    if (cfg.target.thresholds?.red !== undefined) lines.push(`-- @targetRed: ${cfg.target.thresholds.red}`);
+  }
+  return lines.join('\n');
+}
+
 export default function SqlWorkbench() {
   const { canWrite } = useAuth();
   const [searchParams] = useSearchParams();
@@ -52,6 +69,12 @@ export default function SqlWorkbench() {
     if (ann.type === 'metric' || ann.metric) setVizMode('metric');
     else setVizMode('chart');
   }, [sqlText]);
+
+  useEffect(() => {
+    if (vizMode === 'metric') {
+      setInferredAnnotations(buildMetricAnnotations(sqlText));
+    }
+  }, [sqlText, vizMode]);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
   const expandedChartRef = useRef<HTMLDivElement>(null);
@@ -645,20 +668,30 @@ first category->series, default bar/line.`}
                 )}
               </div>
             ) : activeTab === 'metric' ? (
-              <div className="h-64 w-full md:h-80">
-                {connectionId ? (
-                  <MetricBody
-                    item={{
-                      title: 'Metric',
-                      sql: sqlText,
-                      connectionId,
-                      blockType: 'metric',
-                      config: metricConfig(parseAnnotations(sqlText)),
-                      layout: { x: 0, y: 0, w: 12, h: 8 },
-                    }}
-                  />
-                ) : (
-                  <p className="p-4 text-[12px] text-ink-faint">Select a connection first.</p>
+              <div className="space-y-3">
+                <div className="h-64 w-full md:h-80">
+                  {connectionId ? (
+                    <MetricBody
+                      item={{
+                        title: 'Metric',
+                        sql: sqlText,
+                        connectionId,
+                        blockType: 'metric',
+                        config: metricConfig(parseAnnotations(sqlText)),
+                        layout: { x: 0, y: 0, w: 12, h: 8 },
+                      }}
+                    />
+                  ) : (
+                    <p className="p-4 text-[12px] text-ink-faint">Select a connection first.</p>
+                  )}
+                </div>
+                {inferredAnnotations && (
+                  <div className="rounded-lg border border-line bg-paper px-3 py-2">
+                    <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+                      Inferred annotations (copy to build on)
+                    </div>
+                    <pre className="overflow-auto text-[11px] text-ink-soft">{inferredAnnotations}</pre>
+                  </div>
                 )}
               </div>
             ) : (
