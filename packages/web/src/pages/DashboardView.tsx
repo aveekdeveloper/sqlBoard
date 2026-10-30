@@ -1,11 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Maximize2 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { dashboardToDoc, type ManifestItem } from '../dashboard/model.js';
 import FilterBar from '../dashboard/FilterBar.js';
-import BlockBody from '../dashboard/BlockBody.js';
+import { BlockCard } from '../dashboard/BlockCard.js';
 import ExpandedBlockModal from '../dashboard/ExpandedBlockModal.js';
 import type { FilterValue } from '../dashboard/filters.js';
 
@@ -19,6 +18,12 @@ export default function DashboardView() {
     enabled: Number.isFinite(dashboardId) && dashboardId > 0,
   });
 
+  const connectionsQuery = useQuery({
+    queryKey: ['connections'],
+    queryFn: () => api.connections.list(),
+    staleTime: 60_000,
+  });
+  const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const doc = useMemo(() => (dashboard ? dashboardToDoc(dashboard) : null), [dashboard]);
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
   const [expandedItem, setExpandedItem] = useState<ManifestItem | null>(null);
@@ -61,19 +66,21 @@ export default function DashboardView() {
                 gridRow: `${l.y + 1} / span ${l.h}`,
                 minHeight: l.h * 60,
               }}
-              className="relative rounded-xl border border-line bg-surface p-2 shadow-card overflow-hidden"
+              className="overflow-hidden"
             >
-              {(item.blockType === 'chart' || item.blockType === 'table') && (
-                <button
-                  type="button"
-                  onClick={() => setExpandedItem(item)}
-                  className="absolute right-2 top-2 z-10 rounded-md bg-surface/80 p-1 text-ink-muted hover:text-ink"
-                  title="Expand"
-                >
-                  <Maximize2 size={14} />
-                </button>
-              )}
-              <BlockBody item={item} filterValues={filterValues} />
+              <BlockCard
+                item={item}
+                editing={false}
+                draggable={false}
+                connections={connections}
+                filters={doc.filters}
+                filterValues={filterValues}
+                onExpand={
+                  item.blockType === 'chart' || item.blockType === 'table'
+                    ? () => setExpandedItem(item)
+                    : undefined
+                }
+              />
             </div>
           );
         })}
