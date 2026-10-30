@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 import type { EChartsOption } from 'echarts';
-import { useChartSpec } from './queries.js';
+import { useBlockData, useChartSpec } from './queries.js';
 import type { ManifestItem } from './model.js';
 import { BlockEmpty, BlockError, BlockLoading } from './BlockState.js';
 
@@ -308,15 +308,68 @@ export default function ChartBody({
   const chartRef = useRef<echarts.ECharts | null>(null);
   const { data, isLoading, isError, error, refetch } = useChartSpec(item, true, filterValues);
 
+  const annotations = useMemo(() => parseAnnotations(item.sql || ''), [item.sql]);
+  const isMap = useMemo(() => {
+    const cfg = (item.config ?? {}) as Record<string, unknown>;
+    const viz = String(cfg.viz ?? cfg.chartType ?? annotations.viz ?? annotations.type ?? '').toLowerCase();
+    return viz === 'map' || viz === 'geo' || viz === 'choropleth';
+  }, [item.config, annotations]);
+
+  const blockData = useBlockData(item, isMap, filterValues);
+
+  const [geoJson, setGeoJson] = useState<any>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isMap) return;
+    if (geoJson) return;
+    let cancelled = false;
+    setGeoLoading(true);
+    fetch('https://cdn.jsdelivr.net/npm/echarts/map/json/world.json')
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        try { echarts.registerMap('world', json); } catch {}
+        setGeoJson(json);
+      })
+      .catch(() => {
+        if (!cancelled) setGeoJson(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGeoLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [isMap, geoJson]);
+
   const option = useMemo(() => {
     if (!data?.option) return null;
     const cfg = (item.config ?? {}) as Record<string, unknown>;
+    if (isMap) {
+      if (!geoJson) return null;
+      const rows = blockData.data?.rows ?? [];
+      const lonKey = Object.keys(rows[0] ?? {}).find((k) => /lon|lng|longitude/i.test(k));
+      const latKey = Object.keys(rows[0] ?? {}).find((k) => /lat|latitude/i.test(k));
+      const valKey = Object.keys(rows[0] ?? {}).find((k) => /value|count|amount|revenue|total/i.test(k)) || columnsFallback(rows);
+      if (!lonKey || !latKey) return data.option;
+      const points = rows.map((r: any) => [Number(r[lonKey]), Number(r[latKey]), Number(r[valKey] ?? 1)]);
+      return {
+        geo: { map: 'world', roam: true, itemStyle: { areaColor: '#f3f3f3', borderColor: '#999' }, emphasis: { itemStyle: { areaColor: '#e0f3f8' } } },
+        tooltip: { trigger: 'item' },
+        visualMap: { min: 0, max: Math.max(...points.map((p: any) => p[2] || 1), 1), calculable: true },
+        series: [{ type: 'scatter', coordinateSystem: 'geo', data: points, symbolSize: (v: any) => Math.max(4, (v[2] || 1) * 2) }],
+      } as any;
+    }
     return buildOption(data.option, item.sql, {
       timeFormat: typeof cfg.timeFormat === 'string' ? cfg.timeFormat : undefined,
       xFormat: typeof cfg.xFormat === 'string' ? cfg.xFormat : undefined,
       yFormat: typeof cfg.yFormat === 'string' ? cfg.yFormat : undefined,
     });
-  }, [data, item.sql, item.config]);
+  }, [data, item.sql, item.config, isMap, geoJson, blockData.data]);
+
+  function columnsFallback(rows: any[]) {
+    const keys = Object.keys(rows[0] ?? {});
+    return keys.find((k) => !/lon|lng|lat/i.test(k)) || keys[0];
+  }
 
   useEffect(() => {
     const element = containerRef.current;
