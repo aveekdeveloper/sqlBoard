@@ -342,15 +342,15 @@ export default function ChartBody({
   }, [isMap, geoJson]);
 
   const option = useMemo(() => {
-    if (!data?.option) return null;
     const cfg = (item.config ?? {}) as Record<string, unknown>;
     if (isMap) {
       if (!geoJson) return null;
       const rows = blockData.data?.rows ?? [];
+      if (rows.length === 0) return null;
       const lonKey = Object.keys(rows[0] ?? {}).find((k) => /lon|lng|longitude/i.test(k));
       const latKey = Object.keys(rows[0] ?? {}).find((k) => /lat|latitude/i.test(k));
       const valKey = Object.keys(rows[0] ?? {}).find((k) => /value|count|amount|revenue|total/i.test(k)) || columnsFallback(rows);
-      if (!lonKey || !latKey) return data.option;
+      if (!lonKey || !latKey) return null;
       const points = rows.map((r: any) => [Number(r[lonKey]), Number(r[latKey]), Number(r[valKey] ?? 1)]);
       return {
         geo: { map: 'world', roam: true, itemStyle: { areaColor: '#f3f3f3', borderColor: '#999' }, emphasis: { itemStyle: { areaColor: '#e0f3f8' } } },
@@ -359,6 +359,7 @@ export default function ChartBody({
         series: [{ type: 'scatter', coordinateSystem: 'geo', data: points, symbolSize: (v: any) => Math.max(4, (v[2] || 1) * 2) }],
       } as any;
     }
+    if (!data?.option) return null;
     return buildOption(data.option, item.sql, {
       timeFormat: typeof cfg.timeFormat === 'string' ? cfg.timeFormat : undefined,
       xFormat: typeof cfg.xFormat === 'string' ? cfg.xFormat : undefined,
