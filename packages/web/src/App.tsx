@@ -5,6 +5,7 @@ import SqlWorkbench from './pages/SqlWorkbench.js';
 import Dashboards from './pages/Dashboards.js';
 import DashboardDetail from './pages/DashboardDetail.js';
 import DashboardView from './pages/DashboardView.js';
+import Docs from './pages/Docs.js';
 import WorkbookView from './pages/WorkbookView.js';
 import SavedQueries from './pages/SavedQueries.js';
 import Settings from './pages/Settings.js';
@@ -230,6 +231,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         ))}
         <div className="ml-auto flex items-center gap-2">
+          <Link to="/docs" className="text-sm text-ink-muted hover:text-ink">Docs</Link>
           <TenantSwitcher role={role} />
           {user?.email && (
             <span className="hidden text-[11.5px] text-ink-faint lg:inline">{user.email}</span>
@@ -297,6 +299,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/docs" element={<Docs />} />
       <Route path="/connections" element={<Shell><Connections /></Shell>} />
       <Route path="/explore" element={<Navigate to="/sql" replace />} />
       <Route path="/sql" element={<Shell><SqlWorkbench /></Shell>} />
