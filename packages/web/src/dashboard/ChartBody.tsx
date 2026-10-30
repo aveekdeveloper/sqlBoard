@@ -306,8 +306,6 @@ export default function ChartBody({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const { data, isLoading, isError, error, refetch } = useChartSpec(item, true, filterValues);
-
   const annotations = useMemo(() => parseAnnotations(item.sql || ''), [item.sql]);
   const isMap = useMemo(() => {
     const cfg = (item.config ?? {}) as Record<string, unknown>;
@@ -315,7 +313,11 @@ export default function ChartBody({
     return viz === 'map' || viz === 'geo' || viz === 'choropleth';
   }, [item.config, annotations]);
 
+  const { data, isLoading: chartLoading, isError, error, refetch } = useChartSpec(item, !isMap, filterValues);
+
   const blockData = useBlockData(item, isMap, filterValues);
+
+  const isLoading = isMap ? blockData.isLoading : chartLoading;
 
   const [geoJson, setGeoJson] = useState<any>(null);
   const [geoLoading, setGeoLoading] = useState(false);
@@ -352,11 +354,18 @@ export default function ChartBody({
       const valKey = Object.keys(rows[0] ?? {}).find((k) => /value|count|amount|revenue|total/i.test(k)) || columnsFallback(rows);
       if (!lonKey || !latKey) return null;
       const points = rows.map((r: any) => [Number(r[lonKey]), Number(r[latKey]), Number(r[valKey] ?? 1)]);
+      const maxValue = Math.max(...points.map((p: any) => Number(p[2]) || 0), 1);
       return {
         geo: { map: 'world', roam: true, itemStyle: { areaColor: '#f3f3f3', borderColor: '#999' }, emphasis: { itemStyle: { areaColor: '#e0f3f8' } } },
         tooltip: { trigger: 'item' },
-        visualMap: { min: 0, max: Math.max(...points.map((p: any) => p[2] || 1), 1), calculable: true },
-        series: [{ type: 'scatter', coordinateSystem: 'geo', data: points, symbolSize: (v: any) => Math.max(4, (v[2] || 1) * 2) }],
+        visualMap: { min: 0, max: maxValue, calculable: true },
+        // Area-proportional sizing: small counts stay distinguishable, large values cap at 32px.
+        series: [{
+          type: 'scatter',
+          coordinateSystem: 'geo',
+          data: points,
+          symbolSize: (v: any) => 4 + Math.sqrt(Math.max(Number(v[2]) || 0, 0) / maxValue) * 28,
+        }],
       } as any;
     }
     if (!data?.option) return null;
@@ -397,8 +406,14 @@ export default function ChartBody({
     chartRef.current.resize();
   }, [option]);
 
-  const empty = data?.rowCount === 0;
-  const chartError = isError ? (error instanceof Error ? error.message : String(error)) : null;
+  const empty = isMap
+    ? !blockData.isLoading && (blockData.data?.rows?.length ?? 0) === 0
+    : data?.rowCount === 0;
+  const chartError = isMap
+    ? (blockData.isError
+      ? (blockData.error instanceof Error ? blockData.error.message : String(blockData.error))
+      : null)
+    : (isError ? (error instanceof Error ? error.message : String(error)) : null);
 
   return (
     <div className="relative h-full w-full">
@@ -414,7 +429,7 @@ export default function ChartBody({
       )}
       {chartError && !isLoading && (
         <div className="absolute inset-0">
-          <BlockError message={chartError} onRetry={() => refetch()} />
+          <BlockError message={chartError} onRetry={() => (isMap ? blockData.refetch() : refetch())} />
         </div>
       )}
       {!isLoading && !chartError && empty && (
