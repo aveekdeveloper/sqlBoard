@@ -15,14 +15,18 @@ export default function BlockBody({
   filters?: any[];
   filterValues?: Record<string, FilterValue>;
 }) {
+  const effectiveFilterValues =
+    filterValues && Object.keys(filterValues).length > 0
+      ? filterValues
+      : Object.fromEntries((filters ?? []).map((f: any) => [f.name, f.defaultValue ?? null]));
   switch (item.blockType) {
     case 'metric':
-      return <MetricBody item={item} filterValues={filterValues} />;
+      return <MetricBody item={item} filterValues={effectiveFilterValues} />;
     case 'table':
-      return <TableBody item={item} filterValues={filterValues} />;
+      return <TableBody item={item} filterValues={effectiveFilterValues} />;
     case 'text':
       return <TextBody item={item} />;
     default:
-      return <ChartBody item={item} filterValues={filterValues} />;
+      return <ChartBody item={item} filterValues={effectiveFilterValues} />;
   }
 }
