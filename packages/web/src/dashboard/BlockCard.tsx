@@ -122,7 +122,7 @@ export function BlockCard({
           </div>
         )}
       </header>
-      <div className={`min-h-0 flex-1 ${contentPadding}`}>
+      <div className={`min-h-[120px] flex-1 ${contentPadding}`}>
         <BlockBody item={item} filters={filters} filterValues={filterValues} />
       </div>
       {extractFilterRefs(item.sql).length > 0 && (

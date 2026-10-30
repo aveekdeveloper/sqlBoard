@@ -300,14 +300,17 @@ export default function DashboardDetail() {
   });
 
   useEffect(() => {
-    if (Object.keys(filterValues).length > 0) return;
     if (!doc.filters || doc.filters.length === 0) return;
-    const initial: Record<string, FilterValue> = {};
-    for (const filter of doc.filters) {
-      initial[filter.name] = (filter.defaultValue as FilterValue) ?? null;
-    }
-    setFilterValues(initial);
-  }, [doc.filters, filterValues]);
+    setFilterValues((prev) => {
+      const next = { ...prev };
+      for (const filter of doc.filters) {
+        if (next[filter.name] === undefined) {
+          next[filter.name] = (filter.defaultValue as FilterValue) ?? null;
+        }
+      }
+      return next;
+    });
+  }, [doc.filters]);
   const [codeOpen, setCodeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
