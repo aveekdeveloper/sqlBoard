@@ -9,6 +9,7 @@ const PAGE_SIZE = 9;
 export default function Dashboards() {
   const [name, setName] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [showWorkbookForm, setShowWorkbookForm] = useState(false);
   const [workbookName, setWorkbookName] = useState('');
   const [workbookSearch, setWorkbookSearch] = useState('');
@@ -323,7 +324,7 @@ export default function Dashboards() {
               <span className="text-[10.5px] text-ink-faint">
                 {new Date(d.createdAt).toLocaleDateString()}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="hidden items-center gap-2 md:flex">
                 <button
                   onClick={async () => {
                     try {
@@ -371,6 +372,66 @@ export default function Dashboards() {
                   >
                     <Trash2 size={14} />
                   </button>
+                )}
+              </div>
+              <div className="relative md:hidden">
+                <button
+                  onClick={() => setOpenMenuId(openMenuId === d.id ? null : d.id)}
+                  className="rounded-md p-1.5 text-ink-soft hover:bg-[#f1eee7] hover:text-ink"
+                  aria-label="More actions"
+                >
+                  ⋯
+                </button>
+                {openMenuId === d.id && (
+                  <div className="absolute right-0 top-full z-10 mt-1 w-32 rounded-md border border-line bg-surface p-1 shadow-card">
+                    <button
+                      onClick={async () => {
+                        setOpenMenuId(null);
+                        try {
+                          const code = await api.dashboards.exportCode(d.id);
+                          const blob = new Blob([code], { type: 'text/plain' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `dashboard-${d.id}.sql`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (e: any) {
+                          window.alert(e?.message || 'Export failed.');
+                        }
+                      }}
+                      className="block w-full rounded px-2 py-1.5 text-left text-[12px] text-ink-soft hover:bg-[#f1eee7]"
+                    >
+                      Export
+                    </button>
+                    {canWrite && (
+                      <button
+                        onClick={async () => {
+                          setOpenMenuId(null);
+                          try {
+                            const res = await api.dashboards.copy(d.id);
+                            window.location.href = `/dashboards/${res.dashboard.id}`;
+                          } catch (e: any) {
+                            window.alert(e?.message || 'Copy failed.');
+                          }
+                        }}
+                        className="block w-full rounded px-2 py-1.5 text-left text-[12px] text-ink-soft hover:bg-[#f1eee7]"
+                      >
+                        Copy
+                      </button>
+                    )}
+                    {canWrite && (
+                      <button
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          if (confirm('Delete this dashboard?')) deleteMutation.mutate(d.id);
+                        }}
+                        className="block w-full rounded px-2 py-1.5 text-left text-[12px] text-signal hover:bg-signal-soft"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
