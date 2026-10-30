@@ -297,6 +297,24 @@ function buildOption(
   return styled as EChartsOption;
 }
 
+const LON_PATTERN = /lon|lng|longitude/i;
+const LAT_PATTERN = /lat|latitude/i;
+
+function mapColumns(rows: Record<string, unknown>[]) {
+  const keys = Object.keys(rows[0] ?? {});
+  return {
+    keys,
+    lonKey: keys.find((k) => LON_PATTERN.test(k)),
+    latKey: keys.find((k) => LAT_PATTERN.test(k)),
+  };
+}
+
+/** Null/empty coordinates must not become (0, 0) points at Null Island. */
+function coord(value: unknown): number {
+  if (value === null || value === undefined || value === '') return Number.NaN;
+  return Number(value);
+}
+
 export default function ChartBody({
   item,
   filterValues,
@@ -349,11 +367,10 @@ export default function ChartBody({
       if (!geoJson) return null;
       const rows = blockData.data?.rows ?? [];
       if (rows.length === 0) return null;
-      const lonKey = Object.keys(rows[0] ?? {}).find((k) => /lon|lng|longitude/i.test(k));
-      const latKey = Object.keys(rows[0] ?? {}).find((k) => /lat|latitude/i.test(k));
+      const { lonKey, latKey } = mapColumns(rows);
       const valKey = Object.keys(rows[0] ?? {}).find((k) => /value|count|amount|revenue|total/i.test(k)) || columnsFallback(rows);
       if (!lonKey || !latKey) return null;
-      const points = rows.map((r: any) => [Number(r[lonKey]), Number(r[latKey]), Number(r[valKey] ?? 1)]);
+      const points = rows.map((r: any) => [coord(r[lonKey]), coord(r[latKey]), Number(r[valKey] ?? 1)]);
       const maxValue = Math.max(...points.map((p: any) => Number(p[2]) || 0), 1);
       return {
         geo: { map: 'world', roam: true, itemStyle: { areaColor: '#f3f3f3', borderColor: '#999' }, emphasis: { itemStyle: { areaColor: '#e0f3f8' } } },
@@ -380,6 +397,25 @@ export default function ChartBody({
     const keys = Object.keys(rows[0] ?? {});
     return keys.find((k) => !/lon|lng|lat/i.test(k)) || keys[0];
   }
+
+  // Explain a blank map tile instead of rendering nothing.
+  const mapIssue = useMemo(() => {
+    if (!isMap) return null;
+    const rows = blockData.data?.rows ?? [];
+    if (rows.length === 0) return null;
+    const { keys, lonKey, latKey } = mapColumns(rows);
+    if (!lonKey || !latKey) {
+      const missing = [!lonKey && 'longitude', !latKey && 'latitude'].filter(Boolean) as string[];
+      const need = missing.length > 1 ? `${missing.join(' and ')} columns` : `a ${missing[0]} column`;
+      const available = keys.length > 0
+        ? `${keys.slice(0, 8).join(', ')}${keys.length > 8 ? ', …' : ''}`
+        : '(none)';
+      return `A map needs ${need}. This query returned: ${available}.`;
+    }
+    const usable = rows.some((r: any) => Number.isFinite(coord(r[lonKey])) && Number.isFinite(coord(r[latKey])));
+    if (!usable) return `"${lonKey}" and "${latKey}" contain no numeric coordinates.`;
+    return null;
+  }, [isMap, blockData.data]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -412,7 +448,7 @@ export default function ChartBody({
   const chartError = isMap
     ? (blockData.isError
       ? (blockData.error instanceof Error ? blockData.error.message : String(blockData.error))
-      : null)
+      : mapIssue)
     : (isError ? (error instanceof Error ? error.message : String(error)) : null);
 
   return (
@@ -429,7 +465,10 @@ export default function ChartBody({
       )}
       {chartError && !isLoading && (
         <div className="absolute inset-0">
-          <BlockError message={chartError} onRetry={() => (isMap ? blockData.refetch() : refetch())} />
+          <BlockError
+            message={chartError}
+            onRetry={isMap && mapIssue ? undefined : () => (isMap ? blockData.refetch() : refetch())}
+          />
         </div>
       )}
       {!isLoading && !chartError && empty && (
