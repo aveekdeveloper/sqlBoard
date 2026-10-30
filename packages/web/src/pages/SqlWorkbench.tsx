@@ -548,6 +548,18 @@ export default function SqlWorkbench() {
 --   Types: Date, Month, Country, State, City, Category, Quantity, Amount, Price,
 --          Percentage, Count, ID, Name, Status, Number, Unknown (and more)
 --   Drives both rendering (axis type, formatting, geo) and agent understanding.
+
+Metric blocks (-- @type: metric):
+-- @metric: column          -- @prior: column
+-- @sparkline: column       -- @format: currency
+-- @higherIsBetter: true    -- @target: 100
+-- @targetDirection: above  -- @targetAmber: 80  -- @targetRed: 50
+
+Table blocks (-- @type: table):
+-- @columns: col1, col2     -- @pageSize: 10
+-- @density: compact        -- @maxRows: 1000
+-- @format: col: currency, other: number
+-- @rowNumbers: true
 -- @flint: {"chart_spec":{"title":"Custom"}}
 
 No annotations? The compiler infers: temporal->x, first measure->y,
