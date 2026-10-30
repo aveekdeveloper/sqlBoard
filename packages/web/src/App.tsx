@@ -5,6 +5,7 @@ import SqlWorkbench from './pages/SqlWorkbench.js';
 import Dashboards from './pages/Dashboards.js';
 import DashboardDetail from './pages/DashboardDetail.js';
 import DashboardView from './pages/DashboardView.js';
+import WorkbookView from './pages/WorkbookView.js';
 import SavedQueries from './pages/SavedQueries.js';
 import Settings from './pages/Settings.js';
 import { getTenant, setStoredUser, setTenant } from './api/client.js';
@@ -302,6 +303,7 @@ export default function App() {
       <Route path="/dashboards" element={<Shell><Dashboards /></Shell>} />
       <Route path="/dashboards/:id" element={<Shell><DashboardDetail /></Shell>} />
       <Route path="/dashboards/:id/view" element={<DashboardView />} />
+      <Route path="/workbooks/:id" element={<WorkbookView />} />
       <Route path="/saved" element={<Shell><SavedQueries /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       <Route path="*" element={<Navigate to="/connections" replace />} />

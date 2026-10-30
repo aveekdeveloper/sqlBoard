@@ -1,6 +1,6 @@
 import { useRef, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Copy, Download, Trash2 } from 'lucide-react';
+import { BookOpen, Copy, Download, Trash2 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -27,6 +27,11 @@ export default function Dashboards() {
       sortBy,
       sortDir,
     }),
+  });
+
+  const { data: workbooks } = useQuery({
+    queryKey: ['workbooks'],
+    queryFn: () => api.workbooks.list(),
   });
 
   const { data: allTags } = useQuery({
@@ -93,6 +98,24 @@ export default function Dashboards() {
               className="focus-ring rounded-md bg-ink px-4 py-2 text-[12.5px] font-medium text-surface hover:bg-ink-soft"
             >
               {showForm ? 'Cancel' : '+ New dashboard'}
+            </button>
+            <button
+              onClick={async () => {
+                const name = window.prompt('Workbook name');
+                if (!name) return;
+                const ids = window.prompt('Dashboard IDs (comma-separated)');
+                const dashboardIds = ids ? ids.split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n)) : [];
+                try {
+                  const wb = await api.workbooks.create({ name, dashboardIds });
+                  qc.invalidateQueries({ queryKey: ['workbooks'] });
+                  window.location.href = `/workbooks/${wb.id}`;
+                } catch (e: any) {
+                  window.alert(e?.message || 'Create workbook failed.');
+                }
+              }}
+              className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
+            >
+              + New workbook
             </button>
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -355,6 +378,39 @@ export default function Dashboards() {
           </div>
         ))}
       </div>
+
+      {workbooks && workbooks.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-[13px] font-semibold text-ink">Workbooks</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {workbooks.map((wb: any) => (
+              <div key={wb.id} className="flex flex-col rounded-xl border border-line bg-surface p-4 shadow-card">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-soft text-accent">
+                    <BookOpen size={16} />
+                  </span>
+                  <a href={`/workbooks/${wb.id}`} className="truncate text-[13px] font-medium text-accent hover:underline">
+                    {wb.name}
+                  </a>
+                </div>
+                {wb.description && <p className="mt-2 text-[12px] text-ink-muted">{wb.description}</p>}
+                <div className="mt-auto flex items-center justify-between pt-3">
+                  <span className="text-[10.5px] text-ink-faint">{wb.dashboardCount} dashboards</span>
+                  {canWrite && (
+                    <button
+                      onClick={() => { if (confirm('Delete this workbook?')) api.workbooks.delete(wb.id).then(() => qc.invalidateQueries({ queryKey: ['workbooks'] })); }}
+                      className="rounded-md p-1.5 text-signal hover:bg-signal-soft"
+                      title="Delete workbook"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {filtered.length === 0 && (
         <div className="rounded-xl border border-dashed border-line bg-surface/60 px-4 py-10 text-center text-[12.5px] text-ink-muted">

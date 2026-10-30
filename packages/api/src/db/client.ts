@@ -88,6 +88,8 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
     `CREATE TABLE IF NOT EXISTS saved_query_tags (saved_query_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS dashboard_tags (dashboard_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS dashboard_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, tenant_id TEXT NOT NULL, token TEXT NOT NULL UNIQUE, expires_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS workbooks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT, tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS workbook_dashboards (workbook_id INTEGER NOT NULL, dashboard_id INTEGER NOT NULL, position INTEGER NOT NULL DEFAULT 0)`,
   ];
 
   for (const stmt of bootstrapSql) {
@@ -168,6 +170,8 @@ async function openPostgres(config: SqlboardConfig): Promise<OpenedDatabase> {
     `CREATE TABLE IF NOT EXISTS saved_query_tags (saved_query_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS dashboard_tags (dashboard_id INTEGER NOT NULL, tag_id INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS dashboard_shares (id SERIAL PRIMARY KEY, dashboard_id INTEGER NOT NULL, tenant_id UUID NOT NULL, token TEXT NOT NULL UNIQUE, expires_at TIMESTAMPTZ, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS workbooks (id SERIAL PRIMARY KEY, name TEXT NOT NULL, description TEXT, tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS workbook_dashboards (workbook_id INTEGER NOT NULL, dashboard_id INTEGER NOT NULL, position INTEGER NOT NULL DEFAULT 0)`,
   ];
 
   for (const stmt of bootstrapSql) {

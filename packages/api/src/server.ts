@@ -21,6 +21,7 @@ import { registerAuthRoutes, requireUser } from './auth/session.js';
 import { registerTokenRoutes } from './routes/tokens.js';
 import { registerTenantRoutes } from './routes/tenants.js';
 import { registerTagRoutes } from './routes/tags.js';
+import { registerWorkbookRoutes } from './routes/workbooks.js';
 import { registerMcpRoutes } from './mcp/transport.js';
 import { ROLE_RANK } from './auth/roles.js';
 import { QueryCache } from './cache/query-cache.js';
@@ -286,6 +287,7 @@ export async function buildServer(config: SqlboardConfig): Promise<ServerContext
   registerConnectionRoutes(app, routeDeps);
   registerSavedQueryRoutes(app, routeDeps);
   registerDashboardRoutes(app, routeDeps);
+  registerWorkbookRoutes(app, { db });
   registerUploadRoutes(app, routeDeps);
   registerCompileRoute(app, routeDeps);
   registerMcpRoutes(app, { db, engineFactory, duckDb, cache, secretKey: config.secretKey });

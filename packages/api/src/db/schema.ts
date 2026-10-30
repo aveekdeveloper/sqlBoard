@@ -137,6 +137,21 @@ export const dashboardTags = sqliteTable('dashboard_tags', {
   tagId: integer('tag_id').notNull(),
 });
 
+export const workbooks = sqliteTable('workbooks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  tenantId: text('tenant_id').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const workbookDashboards = sqliteTable('workbook_dashboards', {
+  workbookId: integer('workbook_id').notNull(),
+  dashboardId: integer('dashboard_id').notNull(),
+  position: integer('position').notNull().default(0),
+});
+
 export const dashboardShares = sqliteTable('dashboard_shares', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   dashboardId: integer('dashboard_id').notNull(),

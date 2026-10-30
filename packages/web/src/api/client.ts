@@ -274,6 +274,14 @@ export const api = {
     list: () => request<any[]>('/api/tenants'),
   },
 
+  workbooks: {
+    list: () => request<any[]>('/api/workbooks'),
+    get: (id: number) => request<any>(`/api/workbooks/${id}`),
+    create: (body: any) => request<any>('/api/workbooks', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: any) => request<any>(`/api/workbooks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: (id: number) => request<void>(`/api/workbooks/${id}`, { method: 'DELETE' }),
+  },
+
   tags: {
     list: () => request<any[]>('/api/tags'),
     create: (body: { name: string; color?: string }) =>

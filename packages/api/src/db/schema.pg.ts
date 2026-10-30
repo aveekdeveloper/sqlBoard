@@ -158,6 +158,21 @@ export const dashboardTags = pgTable('dashboard_tags', {
   tagId: integer('tag_id').notNull(),
 });
 
+export const workbooks = pgTable('workbooks', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  tenantId: uuid('tenant_id').notNull().default('00000000-0000-0000-0000-000000000000'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const workbookDashboards = pgTable('workbook_dashboards', {
+  workbookId: integer('workbook_id').notNull(),
+  dashboardId: integer('dashboard_id').notNull(),
+  position: integer('position').notNull().default(0),
+});
+
 export const dashboardShares = pgTable('dashboard_shares', {
   id: serial('id').primaryKey(),
   dashboardId: integer('dashboard_id').notNull(),
