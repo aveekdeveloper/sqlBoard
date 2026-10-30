@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Maximize2 } from 'lucide-react';
 import { api } from '../api/client.js';
-import { dashboardToDoc } from '../dashboard/model.js';
+import { dashboardToDoc, type ManifestItem } from '../dashboard/model.js';
 import FilterBar from '../dashboard/FilterBar.js';
-import type { FilterValue } from '../dashboard/filters.js';
 import BlockBody from '../dashboard/BlockBody.js';
+import ExpandedBlockModal from '../dashboard/ExpandedBlockModal.js';
+import type { FilterValue } from '../dashboard/filters.js';
 
 
 export default function DashboardView() {
@@ -19,6 +21,7 @@ export default function DashboardView() {
 
   const doc = useMemo(() => (dashboard ? dashboardToDoc(dashboard) : null), [dashboard]);
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
+  const [expandedItem, setExpandedItem] = useState<ManifestItem | null>(null);
 
   if (isLoading) return <div className="p-6 text-[12.5px] text-ink-muted">Loading dashboard…</div>;
   if (error || !doc) return <div className="p-6 text-[12.5px] text-signal">Could not load dashboard.</div>;
@@ -58,13 +61,26 @@ export default function DashboardView() {
                 gridRow: `${l.y + 1} / span ${l.h}`,
                 minHeight: l.h * 60,
               }}
-              className="rounded-xl border border-line bg-surface p-2 shadow-card overflow-hidden"
+              className="relative rounded-xl border border-line bg-surface p-2 shadow-card overflow-hidden"
             >
+              {(item.blockType === 'chart' || item.blockType === 'table') && (
+                <button
+                  type="button"
+                  onClick={() => setExpandedItem(item)}
+                  className="absolute right-2 top-2 z-10 rounded-md bg-surface/80 p-1 text-ink-muted hover:text-ink"
+                  title="Expand"
+                >
+                  <Maximize2 size={14} />
+                </button>
+              )}
               <BlockBody item={item} filterValues={filterValues} />
             </div>
           );
         })}
       </div>
+      {expandedItem && (
+        <ExpandedBlockModal item={expandedItem} filterValues={filterValues} onClose={() => setExpandedItem(null)} />
+      )}
     </div>
   );
 }
