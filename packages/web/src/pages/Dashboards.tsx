@@ -11,6 +11,9 @@ export default function Dashboards() {
   const [showForm, setShowForm] = useState(false);
   const [showWorkbookForm, setShowWorkbookForm] = useState(false);
   const [workbookName, setWorkbookName] = useState('');
+  const [workbookSearch, setWorkbookSearch] = useState('');
+  const [selectedDashboardIds, setSelectedDashboardIds] = useState<number[]>([]);
+  const [workbookModalOpen, setWorkbookModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -102,7 +105,12 @@ export default function Dashboards() {
               {showForm ? 'Cancel' : '+ New dashboard'}
             </button>
             <button
-              onClick={() => setShowWorkbookForm(!showWorkbookForm)}
+              onClick={() => {
+                setWorkbookName('');
+                setWorkbookSearch('');
+                setSelectedDashboardIds([]);
+                setWorkbookModalOpen(true);
+              }}
               className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
             >
               {showWorkbookForm ? 'Cancel' : '+ New workbook'}
