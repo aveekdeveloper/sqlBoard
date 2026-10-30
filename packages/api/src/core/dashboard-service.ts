@@ -30,6 +30,7 @@ export interface DashboardVersionSummary {
   parentVersion: number | null;
   message: string | null;
   authorId: number | null;
+  authorEmail?: string | null;
   kind: DashboardVersionKind['kind'];
   createdAt: string | Date;
 }
@@ -165,6 +166,7 @@ export async function insertVersion(
   message: string | null,
   kind: DashboardVersionKind['kind'],
   authorId: number | null,
+  authorEmail?: string | null,
 ): Promise<DashboardVersionSummary> {
   const latest = await latestDashboardVersion(db, dashboardId);
   const version = latest + 1;
@@ -178,6 +180,7 @@ export async function insertVersion(
       parentVersion: latest > 0 ? latest : null,
       message,
       authorId,
+      authorEmail: authorEmail ?? null,
       kind,
       snapshotJson: JSON.stringify(snapshot),
       codeText: await serializeSnapshot(db, snapshot),
@@ -191,6 +194,7 @@ export async function insertVersion(
     parentVersion: inserted.parentVersion,
     message: inserted.message,
     authorId: inserted.authorId,
+    authorEmail: inserted.authorEmail,
     kind: inserted.kind as DashboardVersionKind['kind'],
     createdAt: inserted.createdAt,
   };
@@ -249,6 +253,7 @@ export async function applyDashboardState(
   state: ApplyDashboardState,
   authorId: number | null,
   tenantId?: string,
+  authorEmail?: string | null,
 ): Promise<{ dashboard: Awaited<ReturnType<typeof dashboardResponse>>; version: DashboardVersionSummary }> {
   const { snapshot: current } = await readDashboard(db, id, tenantId);
   await assertBaseVersion(db, id, state.baseVersion);
@@ -281,6 +286,7 @@ export async function applyDashboardState(
     state.message ?? 'Apply dashboard code',
     state.kind,
     authorId,
+    authorEmail ?? null,
   );
 
   return { dashboard: await dashboardResponse(db, id, tenantId), version };

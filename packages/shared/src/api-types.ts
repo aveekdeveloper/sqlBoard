@@ -9,6 +9,7 @@ export const ConnectionTypeSchema = z.enum([
   'trino',
   'databricks',
   'snowflake',
+  'semantix',
 ]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 

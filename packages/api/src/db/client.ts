@@ -78,7 +78,7 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
     `CREATE UNIQUE INDEX IF NOT EXISTS saved_query_versions_unique ON saved_query_versions (saved_query_id, version)`,
     `CREATE TABLE IF NOT EXISTS dashboards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT, filters_json TEXT, theme TEXT, colors_json TEXT, tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS dashboard_items (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, title TEXT NOT NULL, sql TEXT NOT NULL, connection_id INTEGER NOT NULL, saved_query_id INTEGER, block_type TEXT NOT NULL DEFAULT 'chart', config_json TEXT, layout_json TEXT NOT NULL, created_at TEXT NOT NULL)`,
-    `CREATE TABLE IF NOT EXISTS dashboard_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, version INTEGER NOT NULL, parent_version INTEGER, message TEXT, author_id INTEGER, kind TEXT NOT NULL DEFAULT 'manual', snapshot_json TEXT NOT NULL, code_text TEXT NOT NULL, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS dashboard_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_id INTEGER NOT NULL, version INTEGER NOT NULL, parent_version INTEGER, message TEXT, author_id INTEGER, author_email TEXT, kind TEXT NOT NULL DEFAULT 'manual', snapshot_json TEXT NOT NULL, code_text TEXT NOT NULL, created_at TEXT NOT NULL)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS dashboard_versions_unique ON dashboard_versions (dashboard_id, version)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT, tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS api_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL, prefix TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'viewer', expires_at TEXT, last_used_at TEXT, revoked_at TEXT, tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', created_at TEXT NOT NULL)`,
@@ -98,6 +98,8 @@ async function openLibsql(config: SqlboardConfig): Promise<OpenedDatabase> {
 
   const db = drizzle(client);
 
+  // Migration: add author_email to dashboard_versions (idempotent).
+  try { await client.execute("ALTER TABLE dashboard_versions ADD COLUMN author_email TEXT"); } catch { /* exists */ }
   // Migration: add tenants.kind column (idempotent) BEFORE any select uses it.
   try { await client.execute("ALTER TABLE tenants ADD COLUMN kind TEXT NOT NULL DEFAULT 'tenant'"); } catch { /* exists */ }
   await client.execute("UPDATE tenants SET kind='platform' WHERE slug='default'");
@@ -187,6 +189,8 @@ async function openPostgres(config: SqlboardConfig): Promise<OpenedDatabase> {
     await pool.query(stmt);
   }
 
+  // Migration: add author_email to dashboard_versions (idempotent).
+  try { await pool.query("ALTER TABLE dashboard_versions ADD COLUMN IF NOT EXISTS author_email TEXT"); } catch { /* exists */ }
   // Migration: add tenants.kind column (idempotent) BEFORE any select uses it.
   await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'tenant'");
   await pool.query("UPDATE tenants SET kind='platform' WHERE slug='default'");

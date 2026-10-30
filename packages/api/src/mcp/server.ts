@@ -207,7 +207,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       await readDashboard(deps.db, args.id, ctx.tenant.id);
       const parsed = ApplyDashboardStateSchema.safeParse(args);
       if (!parsed.success) return { content: [{ type: 'text', text: `Invalid dashboard state: ${JSON.stringify(parsed.error.flatten())}` }], isError: true };
-      const { dashboard, version } = await applyDashboardState(deps.db, args.id, parsed.data, ctx.user.id, ctx.tenant.id);
+      const { dashboard, version } = await applyDashboardState(deps.db, args.id, parsed.data, ctx.user.id, ctx.tenant.id, ctx.user.email);
       return { content: [{ type: 'text', text: JSON.stringify({ ...dashboard, version }, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
@@ -226,7 +226,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const parsed = CommitDashboardSchema.safeParse({ message, baseVersion });
       if (!parsed.success) return { content: [{ type: 'text', text: `Invalid commit: ${JSON.stringify(parsed.error.flatten())}` }], isError: true };
       await (await import('../core/dashboard-service.js')).assertBaseVersion(deps.db, id, parsed.data.baseVersion);
-      const version = await insertVersion(deps.db, id, snapshot, parsed.data.message, 'manual', ctx.user.id);
+      const version = await insertVersion(deps.db, id, snapshot, parsed.data.message, 'manual', ctx.user.id, ctx.user.email);
       return { content: [{ type: 'text', text: JSON.stringify(version, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };

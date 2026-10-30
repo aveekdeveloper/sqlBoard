@@ -12,6 +12,7 @@ import { ClickHouseEngine, type ClickHouseConfig } from './clickhouse.js';
 import { TrinoEngine, type TrinoConfig } from './trino.js';
 import { DatabricksEngine, type DatabricksConfig } from './databricks.js';
 import { SnowflakeEngine, type SnowflakeConfig } from './snowflake.js';
+import { SemantixEngine } from './semantix.js';
 import type { QueryEngine } from './query-engine.js';
 
 export interface EngineFactoryDeps {
@@ -134,6 +135,16 @@ export class EngineFactory {
         schema: config.schema ? String(config.schema) : undefined,
       };
       return new SnowflakeEngine(sfConfig, this.deps.config.queryTimeoutMs);
+    }
+
+    if (type === 'semantix') {
+      return new SemantixEngine(
+        {
+          url: String(config.url ?? ''),
+          token: String(config.token ?? ''),
+        },
+        this.deps.config.queryTimeoutMs,
+      );
     }
 
     throw new ApiError(400, 'CONNECTION_FAILED', `Unknown connection type: ${type}`);

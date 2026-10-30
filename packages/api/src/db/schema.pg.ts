@@ -111,6 +111,7 @@ export const dashboardVersions = pgTable('dashboard_versions', {
   parentVersion: integer('parent_version'),
   message: text('message'),
   authorId: integer('author_id'),
+  authorEmail: text('author_email'),
   kind: text('kind').notNull().default('manual'),
   snapshotJson: text('snapshot_json').notNull(),
   codeText: text('code_text').notNull(),

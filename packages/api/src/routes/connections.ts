@@ -592,6 +592,10 @@ function authorIdFrom(request: { user?: { id: number } }): number | null {
   return request.user?.id ?? null;
 }
 
+function authorEmailFrom(request: { user?: { email?: string } }): string | null {
+  return request.user?.email ?? null;
+}
+
 function parseConfig(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null;
   try {
@@ -691,6 +695,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       'Dashboard created',
       'manual',
       authorIdFrom(request),
+      authorEmailFrom(request),
     );
 
     reply.code(201);
@@ -908,6 +913,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
         parentVersion: row.parentVersion,
         message: row.message,
         authorId: row.authorId,
+        authorEmail: row.authorEmail,
         kind: row.kind as DashboardVersionKind['kind'],
         createdAt: row.createdAt,
         codeText: row.codeText,
@@ -931,6 +937,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       parentVersion: row.parentVersion,
       message: row.message,
       authorId: row.authorId,
+      authorEmail: row.authorEmail,
       kind: row.kind as DashboardVersionKind['kind'],
       createdAt: row.createdAt,
       codeText: row.codeText,
@@ -955,6 +962,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       parsed.data.message,
       'manual',
       authorIdFrom(request),
+      authorEmailFrom(request),
     );
     reply.code(201);
     return version;
@@ -980,6 +988,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       `Restored v${row.version}`,
       'restore',
       authorIdFrom(request),
+      authorEmailFrom(request),
     );
     return { ...await dashboardResponse(deps.db, numericId), version: restored };
   });
