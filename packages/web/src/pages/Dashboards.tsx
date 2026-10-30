@@ -107,24 +107,7 @@ export default function Dashboards() {
             >
               {showWorkbookForm ? 'Cancel' : '+ New workbook'}
             </button>
-            <button
-              onClick={async () => {
-                const name = window.prompt('Workbook name');
-                if (!name) return;
-                const ids = window.prompt('Dashboard IDs (comma-separated)');
-                const dashboardIds = ids ? ids.split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n)) : [];
-                try {
-                  const wb = await api.workbooks.create({ name, dashboardIds });
-                  qc.invalidateQueries({ queryKey: ['workbooks'] });
-                  window.location.href = `/workbooks/${wb.id}`;
-                } catch (e: any) {
-                  window.alert(e?.message || 'Create workbook failed.');
-                }
-              }}
-              className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
-            >
-              + New workbook
-            </button>
+
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
