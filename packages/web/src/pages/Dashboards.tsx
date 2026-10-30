@@ -9,11 +9,9 @@ const PAGE_SIZE = 9;
 export default function Dashboards() {
   const [name, setName] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [workbookModalOpen, setWorkbookModalOpen] = useState(false);
+  const [showWorkbookForm, setShowWorkbookForm] = useState(false);
   const [workbookName, setWorkbookName] = useState('');
-  const [workbookSearch, setWorkbookSearch] = useState('');
-  const [selectedDashboardIds, setSelectedDashboardIds] = useState<number[]>([]);
+  const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -104,15 +102,10 @@ export default function Dashboards() {
               {showForm ? 'Cancel' : '+ New dashboard'}
             </button>
             <button
-              onClick={() => {
-                setWorkbookName('');
-                setWorkbookSearch('');
-                setSelectedDashboardIds([]);
-                setWorkbookModalOpen(true);
-              }}
+              onClick={() => setShowWorkbookForm(!showWorkbookForm)}
               className="focus-ring rounded-md border border-line bg-surface px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:border-line-strong hover:text-ink"
             >
-              + New workbook
+              {showWorkbookForm ? 'Cancel' : '+ New workbook'}
             </button>
             <button
               onClick={async () => {
@@ -423,75 +416,6 @@ export default function Dashboards() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {workbookModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setWorkbookModalOpen(false)}>
-          <div className="w-full max-w-2xl rounded-xl border border-line bg-surface p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-[14px] font-semibold text-ink">New workbook</h3>
-            <div className="mt-3 space-y-3">
-              <input
-                value={workbookName}
-                onChange={(e) => setWorkbookName(e.target.value)}
-                placeholder="Workbook name"
-                className="focus-ring w-full rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-ink"
-              />
-              <input
-                value={workbookSearch}
-                onChange={(e) => setWorkbookSearch(e.target.value)}
-                placeholder="Search dashboards..."
-                className="focus-ring w-full rounded-md border border-line bg-paper px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-faint"
-              />
-              <div className="max-h-60 overflow-auto rounded-md border border-line">
-                {(dashboards || [])
-                  .filter((d: any) => d.name.toLowerCase().includes(workbookSearch.toLowerCase()))
-                  .map((d: any) => (
-                    <label key={d.id} className="flex items-center gap-2 border-b border-line/60 px-3 py-2 text-[12.5px]">
-                      <input
-                        type="checkbox"
-                        checked={selectedDashboardIds.includes(d.id)}
-                        onChange={() => {
-                          setSelectedDashboardIds((prev) =>
-                            prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id],
-                          );
-                        }}
-                      />
-                      <span className="text-ink">{d.name}</span>
-                    </label>
-                  ))}
-              </div>
-              <div className="text-[11.5px] text-ink-muted">
-                Selected: {selectedDashboardIds.length} dashboard{selectedDashboardIds.length === 1 ? '' : 's'}
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setWorkbookModalOpen(false)}
-                className="rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-soft hover:border-line-strong"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!workbookName.trim() || selectedDashboardIds.length === 0}
-                onClick={async () => {
-                  try {
-                    const wb = await api.workbooks.create({ name: workbookName.trim(), dashboardIds: selectedDashboardIds });
-                    qc.invalidateQueries({ queryKey: ['workbooks'] });
-                    setWorkbookModalOpen(false);
-                    window.location.href = `/workbooks/${wb.id}`;
-                  } catch (e: any) {
-                    window.alert(e?.message || 'Create workbook failed.');
-                  }
-                }}
-                className="rounded-md bg-ink px-3 py-1.5 text-[12px] font-medium text-surface hover:bg-ink-soft disabled:opacity-50"
-              >
-                Create
-              </button>
-            </div>
           </div>
         </div>
       )}
