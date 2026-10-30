@@ -12,10 +12,10 @@ import { ApiError, notFound } from '../errors.js';
 import {
   parseDashboardManifest,
   serializeDashboardManifest,
-  type ApplyDashboardState,
   type ManifestDashboard,
   type ManifestFilter,
-} from '@sqlboard/shared';
+} from 'sql-to-flint';
+import { type ApplyDashboardState } from '@sqlboard/shared';
 
 export type DashboardSnapshot = ManifestDashboard;
 

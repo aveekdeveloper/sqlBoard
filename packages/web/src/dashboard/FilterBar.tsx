@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
-import type { ManifestFilter } from '@sqlboard/shared';
+import type { ManifestFilter } from './model.js';
 import { formatFilterValue, type FilterValue } from './filters.js';
 
 export default function FilterBar({

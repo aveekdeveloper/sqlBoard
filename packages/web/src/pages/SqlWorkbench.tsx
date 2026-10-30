@@ -10,7 +10,7 @@ import { useAuth } from '../auth.js';
 import HistoryDialog from '../dashboard/HistoryDialog.js';
 import { styleAxes, styleBars } from '../dashboard/ChartBody.js';
 import MetricBody from '../dashboard/MetricBody.js';
-import { metricConfig } from '@sqlboard/shared';
+import { metricConfig } from 'sql-to-flint';
 
 function parseAnnotations(sql: string): Record<string, string> {
   const result: Record<string, string> = {};

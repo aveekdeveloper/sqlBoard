@@ -1,15 +1,17 @@
 import {
   parseDashboardManifest,
   serializeDashboardManifest,
-  type DashboardBlockType,
-  type DashboardItemDto,
-  type Layout,
   type ManifestConnection,
   type ManifestSavedQuery,
   type ManifestDashboard,
   type ManifestDiagnostic,
   type ManifestItem,
   type ManifestFilter,
+} from 'sql-to-flint';
+import {
+  type DashboardBlockType,
+  type DashboardItemDto,
+  type Layout,
   type MetricFormat,
 } from '@sqlboard/shared';
 
