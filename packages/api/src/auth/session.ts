@@ -156,6 +156,26 @@ export async function requireUser(
 ): Promise<AuthUser> {
   const token = extractToken(request);
   if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'missing credentials');
+
+  // Delegated JWT (SEMANTIX -> sqlboard). HS256, 60s lifetime.
+  if (token.split('.').length === 3) {
+    try {
+      const { createRequire } = await import('node:module');
+      const require = createRequire(import.meta.url);
+      const jwt = require('jsonwebtoken');
+      const secret = process.env.SQLBOARD_JWT_SECRET || process.env.SECRET_KEY || 'dev-secret-change-me';
+      const claims = jwt.verify(token, secret, { issuer: 'semantix', audience: 'sqlboard' }) as any;
+      if (!claims?.email) throw new Error('missing email claim');
+      return {
+        id: 0,
+        email: String(claims.email),
+        role: toRole(claims.role),
+      };
+    } catch (err) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'invalid or expired delegated token');
+    }
+  }
+
   if (token.startsWith('sb_')) return resolveApiToken(db, token);
 
   const rows = await db.select().from(sessions).where(eq(sessions.token, token));

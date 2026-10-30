@@ -96,6 +96,13 @@ export const CreateSnowflakeConnectionSchema = z.object({
   schema: z.string().optional(),
 });
 
+export const CreateSemantixConnectionSchema = z.object({
+  type: z.literal('semantix'),
+  name: z.string().min(1),
+  url: z.string().min(1),
+  token: z.string().min(1),
+});
+
 export const CreateConnectionRequestSchema = z.discriminatedUnion('type', [
   CreateDuckDbConnectionSchema,
   CreateSqliteConnectionSchema,
@@ -105,6 +112,7 @@ export const CreateConnectionRequestSchema = z.discriminatedUnion('type', [
   CreateTrinoConnectionSchema,
   CreateDatabricksConnectionSchema,
   CreateSnowflakeConnectionSchema,
+CreateSemantixConnectionSchema,
 ]);
 export type CreateConnectionRequest = z.infer<typeof CreateConnectionRequestSchema>;
 

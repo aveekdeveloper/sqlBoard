@@ -867,6 +867,8 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
       numericId,
       parsed.data,
       authorIdFrom(request),
+      undefined,
+      authorEmailFrom(request),
     );
     return { ...dashboard, version };
   });
