@@ -841,10 +841,10 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!parsed.success) throw badRequest('Invalid layout update', parsed.error.flatten());
 
     for (const entry of parsed.data.items) {
-      const existing = await deps.db
+      const [existing] = await deps.db
         .select({ id: dashboardItems.id, dashboardId: dashboardItems.dashboardId })
         .from(dashboardItems)
-        .where(eq(dashboardItems.id, entry.id))
+        .where(eq(dashboardItems.id, entry.id));
       if (!existing || existing.dashboardId !== numericId) continue;
       await deps.db
         .update(dashboardItems)
