@@ -60,6 +60,7 @@ Data:
 - `get_connection` → GET /api/connections/:id (tenant-scoped)
 - `test_connection` → POST /api/connections/:id/test
 - `list_tables` → GET /api/connections/:id/tables
+- `describe_table` → GET /api/connections/:id/tables/:name/describe (columns, types, nullability, defaults, primary key, foreign keys)
 - `preview_table` → GET /api/connections/:id/tables/:name/preview (limit 100)
 - `run_query` → POST /api/connections/:id/query (sql, maxRows; default cap 1000, truncate with note)
 

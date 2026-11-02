@@ -1,9 +1,13 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import {
+  escapeLiteral,
+  quoteQualifiedIdentifier,
+  splitTableName,
   toQueryResult,
   type QueryEngine,
   type QueryResult,
   type RunOptions,
+  type TableDescription,
   type TableInfo,
 } from './query-engine.js';
 
@@ -65,7 +69,61 @@ export class ClickHouseEngine implements QueryEngine {
 
   async preview(table: string, limit = 100): Promise<QueryResult> {
     const safe = Math.max(1, Math.min(limit, 5000));
-    return this.run(`SELECT * FROM ${table} LIMIT ${safe}`);
+    return this.run(`SELECT * FROM ${quoteQualifiedIdentifier(table)} LIMIT ${safe}`);
+  }
+
+  async describeTable(table: string): Promise<TableDescription> {
+    const parts = splitTableName(table);
+    const tableName = parts[parts.length - 1] ?? table;
+    const database = parts.length >= 2 ? parts[parts.length - 2] : this.config.database;
+
+    const columnRows = await this.run(
+      `DESCRIBE TABLE ${quoteQualifiedIdentifier(table)}`,
+    );
+    const columns = columnRows.rows.map((row) => {
+      const type = String(row.type ?? 'unknown');
+      return {
+        name: String(row.name),
+        type,
+        nullable: /^Nullable\(/.test(type),
+        default: row.default_expression ? String(row.default_expression) : null,
+        comment: row.comment == null || String(row.comment) === '' ? null : String(row.comment),
+      };
+    });
+
+    let kind: TableDescription['kind'] = 'unknown';
+    let comment: string | null = null;
+    try {
+      const meta = await this.run(
+        `SELECT engine, comment FROM system.tables
+         WHERE database = ${escapeLiteral(database)} AND name = ${escapeLiteral(tableName)}
+         LIMIT 1`,
+      );
+      const engine = String(meta.rows[0]?.engine ?? '');
+      comment =
+        meta.rows[0]?.comment == null || String(meta.rows[0].comment) === ''
+          ? null
+          : String(meta.rows[0].comment);
+      kind = /MaterializedView/i.test(engine)
+        ? 'materialized_view'
+        : /View/i.test(engine)
+          ? 'view'
+          : engine
+            ? 'table'
+            : 'unknown';
+    } catch {
+      // Table metadata is best-effort; DESCRIBE already succeeded.
+    }
+
+    return {
+      name: tableName,
+      schema: database,
+      kind,
+      comment,
+      columns,
+      primaryKey: [],
+      foreignKeys: [],
+    };
   }
 
   async close(): Promise<void> {

@@ -153,6 +153,9 @@ export class EngineFactory {
   async closeConnection(connectionId: number): Promise<void> {
     const engine = this.engines.get(connectionId);
     this.engines.delete(connectionId);
+    if (engine instanceof SqliteFileEngine) {
+      await engine.close().catch(() => undefined);
+    }
     if (engine instanceof PostgresEngine) {
       await engine.close().catch(() => undefined);
     }

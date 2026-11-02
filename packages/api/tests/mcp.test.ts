@@ -103,6 +103,36 @@ describe('mcp transport', () => {
     expect(parsed?.result?.isError).not.toBe(true);
   });
 
+  it('exposes describe_table in the tool list', async () => {
+    const token = await login(ctx, 'admin@test.dev');
+    const init = await ctx.app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}`, 'x-tenant': 'default' },
+      payload: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } },
+    });
+    const sid = init.headers['mcp-session-id'];
+    expect(sid).toBeTruthy();
+
+    await ctx.app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}`, 'x-tenant': 'default', 'mcp-session-id': sid },
+      payload: { jsonrpc: '2.0', method: 'notifications/initialized' },
+    });
+
+    const list = await ctx.app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}`, 'x-tenant': 'default', 'mcp-session-id': sid },
+      payload: { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    });
+    expect(list.statusCode).toBe(200);
+    const parsed = parseSse(list.payload);
+    const names = (parsed?.result?.tools ?? []).map((tool: { name: string }) => tool.name);
+    expect(names).toContain('describe_table');
+  });
+
   it('returns 404 for an unknown session id', async () => {
     const res = await ctx.app.inject({
       method: 'POST',

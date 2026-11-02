@@ -1,9 +1,11 @@
 import { DBSQLClient } from '@databricks/sql';
 import {
+  splitTableName,
   toQueryResult,
   type QueryEngine,
   type QueryResult,
   type RunOptions,
+  type TableDescription,
   type TableInfo,
 } from './query-engine.js';
 
@@ -116,6 +118,58 @@ export class DatabricksEngine implements QueryEngine {
     const safe = Math.max(1, Math.min(limit, 5000));
     const qualified = this.qualifyTable(table);
     return this.run(`SELECT * FROM ${qualified} LIMIT ${safe}`);
+  }
+
+  async describeTable(table: string): Promise<TableDescription> {
+    const parts = splitTableName(table);
+    const tableName = parts[parts.length - 1] ?? table;
+    const qualified = this.qualifyTable(table);
+
+    const result = await this.run(`DESCRIBE TABLE EXTENDED ${qualified}`);
+
+    const columns: TableDescription['columns'] = [];
+    const details = new Map<string, string>();
+    let inDetails = false;
+    for (const row of result.rows) {
+      const name = String(row.col_name ?? row.COLUMN_NAME ?? '').trim();
+      const type = String(row.data_type ?? row.DATA_TYPE ?? '').trim();
+      const comment = row.comment ?? row.COMMENT;
+      if (!name) continue;
+      if (name.startsWith('#')) {
+        inDetails = true;
+        continue;
+      }
+      if (inDetails) {
+        if (name && type) details.set(name, type);
+        continue;
+      }
+      if (!type) continue;
+      columns.push({
+        name,
+        type,
+        nullable: true,
+        default: null,
+        comment: comment == null || String(comment) === '' ? null : String(comment),
+      });
+    }
+
+    const detailType = String(details.get('Type') ?? '').toUpperCase();
+    const kind: TableDescription['kind'] = detailType.includes('VIEW')
+      ? 'view'
+      : detailType
+        ? 'table'
+        : 'unknown';
+
+    return {
+      name: tableName,
+      schema: parts.length >= 2 ? parts[parts.length - 2] : this.schema ?? null,
+      catalog: parts.length >= 3 ? parts[parts.length - 3] : this.catalog ?? null,
+      kind,
+      comment: null,
+      columns,
+      primaryKey: [],
+      foreignKeys: [],
+    };
   }
 
   async close(): Promise<void> {

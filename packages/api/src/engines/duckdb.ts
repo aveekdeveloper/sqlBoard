@@ -1,14 +1,16 @@
 import duckdb from 'duckdb';
 import {
+  escapeLiteral,
   quoteIdentifier,
+  quoteQualifiedIdentifier,
+  splitTableName,
   toQueryResult,
   type QueryEngine,
   type QueryResult,
   type RunOptions,
+  type TableDescription,
   type TableInfo,
 } from './query-engine.js';
-
-const escapeLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
 const columnTypeOf = (rows: Array<Record<string, unknown>>, column: string): string => {
   for (const row of rows) {
@@ -191,8 +193,63 @@ export class DuckDbEngine implements QueryEngine {
 
   async preview(table: string, limit = 100): Promise<QueryResult> {
     return this.run(
-      `SELECT * FROM ${quoteIdentifier(table)} LIMIT ${Math.max(1, Math.min(limit, 5000))}`,
+      `SELECT * FROM ${quoteQualifiedIdentifier(table)} LIMIT ${Math.max(1, Math.min(limit, 5000))}`,
     );
+  }
+
+  async describeTable(table: string): Promise<TableDescription> {
+    const parts = splitTableName(table);
+    const tableName = parts[parts.length - 1] ?? table;
+    const schema = parts.length >= 2 ? parts[parts.length - 2] : 'main';
+
+    const columnRows = await this.all(`PRAGMA table_info(${escapeLiteral(table)})`);
+    const columns = columnRows.map((row) => ({
+      name: String(row.name),
+      type: String(row.type ?? 'unknown'),
+      nullable: !Number(row.notnull),
+      primaryKey: Number(row.pk) > 0,
+      default: row.dflt_value == null ? null : String(row.dflt_value),
+      comment: null,
+    }));
+
+    const foreignKeys: NonNullable<TableDescription['foreignKeys']> = [];
+    try {
+      const fkRows = await this.all(`PRAGMA foreign_key_list(${escapeLiteral(table)})`);
+      for (const row of fkRows) {
+        foreignKeys.push({
+          column: String(row.from),
+          referencedTable: String(row.table),
+          referencedColumn: String(row.to),
+          constraintName: `fk_${String(row.id)}`,
+        });
+      }
+    } catch {
+      // Foreign-key metadata is best-effort.
+    }
+
+    let kind: TableDescription['kind'] = 'unknown';
+    try {
+      const meta = await this.all(
+        `SELECT table_type FROM information_schema.tables
+         WHERE table_schema = ${escapeLiteral(schema)}
+           AND table_name = ${escapeLiteral(tableName)}
+         LIMIT 1`,
+      );
+      const tableType = String(meta[0]?.table_type ?? '');
+      kind = /VIEW/i.test(tableType) ? 'view' : tableType ? 'table' : 'unknown';
+    } catch {
+      // Table metadata is best-effort.
+    }
+
+    return {
+      name: tableName,
+      schema,
+      kind,
+      comment: null,
+      columns,
+      primaryKey: columns.filter((column) => column.primaryKey).map((column) => column.name),
+      foreignKeys,
+    };
   }
 
   async countRows(table: string): Promise<number> {

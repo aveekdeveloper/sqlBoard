@@ -1,4 +1,6 @@
-import type { ConnectionType } from '@sqlboard/shared';
+import type { ConnectionType, TableDescription } from '@sqlboard/shared';
+
+export type { TableDescription } from '@sqlboard/shared';
 
 export interface QueryResult {
   columns: string[];
@@ -22,6 +24,7 @@ export interface QueryEngine {
   run(sql: string, options?: RunOptions): Promise<QueryResult>;
   listTables(): Promise<TableInfo[]>;
   preview(table: string, limit?: number): Promise<QueryResult>;
+  describeTable(table: string): Promise<TableDescription>;
 }
 
 export function normalizeValue(value: unknown): unknown {
@@ -54,3 +57,29 @@ export function toQueryResult(rows: Array<Record<string, unknown>>): QueryResult
 
 export const quoteIdentifier = (name: string): string =>
   `"${name.replace(/"/g, '""')}"`;
+
+export const quoteQualifiedIdentifier = (name: string): string =>
+  name
+    .split('.')
+    .map((part) => quoteIdentifier(part.trim()))
+    .join('.');
+
+export const quoteMysqlIdentifier = (name: string): string =>
+  `\`${name.replace(/`/g, '``')}\``;
+
+export const quoteMysqlQualifiedIdentifier = (name: string): string =>
+  name
+    .split('.')
+    .map((part) => quoteMysqlIdentifier(part.trim()))
+    .join('.');
+
+export const escapeLiteral = (value: string): string =>
+  `'${value.replace(/'/g, "''")}'`;
+
+/** Split a possibly schema-qualified table name into its parts. */
+export function splitTableName(table: string): string[] {
+  return table
+    .split('.')
+    .map((part) => part.trim().replace(/^["`]|["`]$/g, ''))
+    .filter(Boolean);
+}

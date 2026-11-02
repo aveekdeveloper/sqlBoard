@@ -158,6 +158,36 @@ export const TableInfoSchema = z.object({
 });
 export type TableInfo = z.infer<typeof TableInfoSchema>;
 
+export const TableColumnSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  nullable: z.boolean().optional(),
+  primaryKey: z.boolean().optional(),
+  default: z.string().nullable().optional(),
+  comment: z.string().nullable().optional(),
+});
+export type TableColumn = z.infer<typeof TableColumnSchema>;
+
+export const TableForeignKeySchema = z.object({
+  column: z.string(),
+  referencedTable: z.string(),
+  referencedColumn: z.string(),
+  constraintName: z.string().optional(),
+});
+export type TableForeignKey = z.infer<typeof TableForeignKeySchema>;
+
+export const TableDescriptionSchema = z.object({
+  name: z.string(),
+  schema: z.string().nullable().optional(),
+  catalog: z.string().nullable().optional(),
+  kind: z.enum(['table', 'view', 'materialized_view', 'unknown']).optional(),
+  comment: z.string().nullable().optional(),
+  columns: z.array(TableColumnSchema),
+  primaryKey: z.array(z.string()).optional(),
+  foreignKeys: z.array(TableForeignKeySchema).optional(),
+});
+export type TableDescription = z.infer<typeof TableDescriptionSchema>;
+
 export const RunQueryRequestSchema = z.object({
   sql: z.string().min(1),
   maxRows: z.number().int().min(1).max(50000).default(5000),

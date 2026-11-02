@@ -69,6 +69,16 @@ export function createMcpServer(deps: McpDeps): McpServer {
     }
   });
 
+  server.tool('describe_table', 'Describe a table: columns, data types, nullability, defaults, primary key and foreign keys.', { connectionId: z.number().int().describe('Connection ID'), table: z.string().describe('Table name, optionally schema-qualified') }, async ({ connectionId, table }, extra) => {
+    try {
+      const engine = await deps.engineFactory.forConnectionId(connectionId);
+      const description = await engine.describeTable(table);
+      return { content: [{ type: 'text', text: JSON.stringify(description, null, 2) }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true };
+    }
+  });
+
   server.tool('run_query', 'Execute a SQL query against a connection. Returns columns, rows, and row count.', { connectionId: z.number().int(), sql: z.string(), maxRows: z.number().int().min(1).max(5000).default(1000) }, async ({ connectionId, sql, maxRows }, extra) => {
     try {
       const engine = await deps.engineFactory.forConnectionId(connectionId);

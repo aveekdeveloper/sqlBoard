@@ -4,6 +4,7 @@ coverage/
 *.tsbuildinfo
 data/*
 !data/samples/
+data-test-*/
 uploads/
 .env
 .env.*

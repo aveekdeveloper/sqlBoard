@@ -241,6 +241,21 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
   });
 
+  app.get('/api/connections/:id/tables/:name/describe', async (request: any) => {
+    const { id, name } = request.params as { id: string; name: string };
+    try {
+      const engine = await deps.engineFactory.forConnectionId(Number(id), currentTenant().id);
+      const description = await engine.describeTable(name);
+      if (description.columns.length === 0 && description.kind === 'unknown') {
+        throw notFound(`Table ${name} not found on connection ${id}`);
+      }
+      return description;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(500, 'CONNECTION_FAILED', (error as Error).message);
+    }
+  });
+
   app.post('/api/connections/:id/query', async (request: any) => {
     const { id } = request.params as { id: string };
     const parsed = RunQueryRequestSchema.safeParse(request.body);
