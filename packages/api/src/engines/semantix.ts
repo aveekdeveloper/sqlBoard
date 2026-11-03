@@ -6,7 +6,7 @@ import type {
   TableDescription,
   TableInfo,
 } from './query-engine.js';
-import { toQueryResult, escapeLiteral, quoteIdentifier, splitTableName } from './query-engine.js';
+import { toQueryResult, escapeLiteral, quoteQualifiedIdentifier, splitTableName } from './query-engine.js';
 
 export interface SemantixConfig {
   url: string;
@@ -68,15 +68,21 @@ export class SemantixEngine implements QueryEngine {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!res.ok) return [];
-      const body = (await res.json()) as { tables?: Array<{ name: string; columns?: string[] }> };
-      return Array.isArray(body.tables) ? body.tables : [];
+      const body = (await res.json()) as {
+        tables?: Array<{ name: string; schema?: string; catalog?: string; columns?: string[] }>;
+      };
+      if (!Array.isArray(body.tables)) return [];
+      return body.tables.map((t) => ({
+        ...t,
+        name: t.schema && !t.name.includes('.') ? `${t.schema}.${t.name}` : t.name,
+      }));
     } catch {
       return [];
     }
   }
 
   async preview(table: string, limit = 20): Promise<QueryResult> {
-    return this.run(`SELECT * FROM ${quoteIdentifier(table)} LIMIT ${limit}`);
+    return this.run(`SELECT * FROM ${quoteQualifiedIdentifier(table)} LIMIT ${limit}`);
   }
 
   async describeTable(table: string): Promise<TableDescription> {
