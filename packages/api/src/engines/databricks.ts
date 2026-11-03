@@ -64,7 +64,26 @@ export class DatabricksEngine implements QueryEngine {
     return parts.join('.');
   }
 
-  async run(sql: string, options?: RunOptions): Promise<QueryResult> {
+  private async reset(): Promise<void> {
+    await this.session?.close().catch(() => undefined);
+    await this.client?.close().catch(() => undefined);
+    this.session = null;
+    this.client = null;
+  }
+
+  private isStaleSessionError(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error).toLowerCase();
+    return (
+      message.includes('bad http status code: 400') ||
+      message.includes('bad http status code: 401') ||
+      message.includes('invalid session') ||
+      message.includes('session is closed') ||
+      message.includes('unauthorized') ||
+      message.includes('token')
+    );
+  }
+
+  private async runOnce(sql: string, options?: RunOptions): Promise<QueryResult> {
     await this.ensureReady();
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -89,7 +108,19 @@ export class DatabricksEngine implements QueryEngine {
     }
   }
 
-  async listTables(): Promise<TableInfo[]> {
+  async run(sql: string, options?: RunOptions): Promise<QueryResult> {
+    try {
+      return await this.runOnce(sql, options);
+    } catch (error) {
+      // A cached Databricks session can go stale (warehouse restart, token
+      // rotation). Reconnect once before surfacing the error.
+      if (!this.isStaleSessionError(error)) throw error;
+      await this.reset();
+      return await this.runOnce(sql, options);
+    }
+  }
+
+  private async listTablesOnce(): Promise<TableInfo[]> {
     await this.ensureReady();
     const req: { catalogName?: string; schemaName?: string } = {};
     if (this.catalog) req.catalogName = this.catalog;
@@ -112,6 +143,16 @@ export class DatabricksEngine implements QueryEngine {
       result.push({ name: qualified });
     }
     return result;
+  }
+
+  async listTables(): Promise<TableInfo[]> {
+    try {
+      return await this.listTablesOnce();
+    } catch (error) {
+      if (!this.isStaleSessionError(error)) throw error;
+      await this.reset();
+      return await this.listTablesOnce();
+    }
   }
 
   async preview(table: string, limit = 100): Promise<QueryResult> {

@@ -221,6 +221,19 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: RouteDeps):
     }
   });
 
+  app.post('/api/connections/:id/reset', async (request: any) => {
+    const { id } = request.params as { id: string };
+    const numericId = Number(id);
+    const rows = await deps.db.select().from(connections).where(eq(connections.id, numericId));
+    const existing = rows[0];
+    if (!existing || existing.tenantId !== currentTenant().id) {
+      throw notFound(`Connection ${id} not found`);
+    }
+    await deps.engineFactory.closeConnection(numericId);
+    deps.cache.invalidateConnection(numericId);
+    return { reset: true };
+  });
+
   app.get('/api/connections/:id/tables', async (request: any) => {
     const { id } = request.params as { id: string };
     try {
