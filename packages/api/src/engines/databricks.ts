@@ -201,12 +201,14 @@ export class DatabricksEngine implements QueryEngine {
         ? 'table'
         : 'unknown';
 
+    const tableComment = details.get('Comment') ?? null;
+
     return {
       name: tableName,
       schema: parts.length >= 2 ? parts[parts.length - 2] : this.schema ?? null,
       catalog: parts.length >= 3 ? parts[parts.length - 3] : this.catalog ?? null,
       kind,
-      comment: null,
+      comment: tableComment,
       columns,
       primaryKey: [],
       foreignKeys: [],
