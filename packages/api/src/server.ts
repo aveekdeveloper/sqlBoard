@@ -39,7 +39,13 @@ export interface ServerContext {
   config: SqlboardConfig;
 }
 
-const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login', '/api/auth/logout']);
+const PUBLIC_PATHS = new Set([
+  '/api/health',
+  '/api/auth/login',
+  '/api/auth/logout',
+  // Internal provisioning: protected by x-service-token inside the route.
+  '/api/internal/tenants/ensure',
+]);
 
 // Viewers may still mint read-only tokens and revoke them.
 const SELF_SERVICE_WRITES = [/^\/api\/tokens$/, /^\/api\/tokens\/\d+$/];

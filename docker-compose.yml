@@ -27,6 +27,7 @@ services:
       - DATA_DIR=/data
       - DATABASE_URL=postgres://sqlboard:${POSTGRES_PASSWORD}@postgres:5432/sqlboard
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - BI_SERVICE_TOKEN=${BI_SERVICE_TOKEN:-}
       - TENANCY_ENABLED=${TENANCY_ENABLED:-false}
       - BASE_DOMAIN=${BASE_DOMAIN:-}
       - CACHE_TTL_MINUTES=${CACHE_TTL_MINUTES:-5}

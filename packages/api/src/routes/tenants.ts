@@ -25,6 +25,17 @@ const UpdateTenantSchema = z.object({
   status: z.enum(['active', 'suspended', 'deleted']).optional(),
 });
 
+// Service-to-service provisioning (SEMANTIX -> sqlboard). The SQLBoard tenant
+// row is what resolves the x-tenant header; the BFF never creates sqlboard
+// sessions, so no admin user is required here.
+const EnsureTenantSchema = z.object({
+  slug: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9-]+$/, 'slug must be alphanumeric with hyphens'),
+  name: z.string().trim().min(1).max(200),
+  domain: z.string().trim().optional(),
+  plan: z.enum(['free', 'pro', 'enterprise']).default('free'),
+  ownerEmail: z.string().email().optional(),
+});
+
 function requireAdmin(request: FastifyRequest) {
   if (!request.user || request.user.role !== 'platform_admin') {
     throw new ApiError(403, 'FORBIDDEN', 'platform admin role required');
@@ -34,7 +45,76 @@ function requireAdmin(request: FastifyRequest) {
   }
 }
 
+function tenantResponse(t: any) {
+  return {
+    id: t.id,
+    slug: t.slug,
+    name: t.name,
+    domain: t.domain,
+    plan: t.plan,
+    status: t.status,
+    kind: t.kind ?? 'tenant',
+    ownerEmail: t.ownerEmail,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  };
+}
+
 export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb }): void {
+  // Internal service-token provisioning. SEMANTIX calls this on signup so the
+  // x-tenant header resolves before the first BI request. Idempotent by slug.
+  app.post('/api/internal/tenants/ensure', async (request: any, reply: any) => {
+    const expected = (process.env.BI_SERVICE_TOKEN ?? '').trim();
+    if (!expected) {
+      throw new ApiError(503, 'PROVISIONING_DISABLED', 'BI_SERVICE_TOKEN is not configured');
+    }
+    const raw = request.headers['x-service-token'];
+    const provided = Array.isArray(raw) ? raw[0] : raw;
+    if (!provided || provided !== expected) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'invalid service token');
+    }
+
+    const parsed = EnsureTenantSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest('Invalid tenant payload', parsed.error.flatten());
+    const data = parsed.data;
+
+    const existing = await deps.db.select().from(tenants).where(eq(tenants.slug, data.slug));
+    if (existing[0]) {
+      return reply.code(200).send({ tenant: tenantResponse(existing[0]) });
+    }
+
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    await deps.db.insert(tenants).values({
+      id,
+      slug: data.slug,
+      name: data.name,
+      domain: data.domain ?? null,
+      plan: data.plan,
+      status: 'active',
+      kind: 'tenant',
+      ownerEmail: data.ownerEmail ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    reply.code(201);
+    return {
+      tenant: {
+        id,
+        slug: data.slug,
+        name: data.name,
+        domain: data.domain ?? null,
+        plan: data.plan,
+        status: 'active',
+        kind: 'tenant',
+        ownerEmail: data.ownerEmail ?? null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+  });
+
   // List tenants (admin only)
   app.get('/api/tenants', async (request: any) => {
     requireAdmin(request);
