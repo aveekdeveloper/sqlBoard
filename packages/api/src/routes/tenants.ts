@@ -60,19 +60,33 @@ function tenantResponse(t: any) {
   };
 }
 
+function requireServiceToken(request: any) {
+  const expected = (process.env.BI_SERVICE_TOKEN ?? '').trim();
+  if (!expected) {
+    throw new ApiError(503, 'PROVISIONING_DISABLED', 'BI_SERVICE_TOKEN is not configured');
+  }
+  const raw = request.headers['x-service-token'];
+  const provided = Array.isArray(raw) ? raw[0] : raw;
+  if (!provided || provided !== expected) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'invalid service token');
+  }
+}
+
 export function registerTenantRoutes(app: FastifyInstance, deps: { db: DrizzleDb }): void {
+  // Internal, read-only tenant link check. Does not create or modify rows.
+  app.get('/api/internal/tenants/status', async (request: any) => {
+    requireServiceToken(request);
+    const raw = request.query?.slug;
+    const slug = typeof raw === 'string' ? raw.trim() : '';
+    if (!isValidSlug(slug)) throw badRequest('Invalid slug');
+    const rows = await deps.db.select().from(tenants).where(eq(tenants.slug, slug));
+    return { tenant: rows[0] ? tenantResponse(rows[0]) : null };
+  });
+
   // Internal service-token provisioning. SEMANTIX calls this on signup so the
   // x-tenant header resolves before the first BI request. Idempotent by slug.
   app.post('/api/internal/tenants/ensure', async (request: any, reply: any) => {
-    const expected = (process.env.BI_SERVICE_TOKEN ?? '').trim();
-    if (!expected) {
-      throw new ApiError(503, 'PROVISIONING_DISABLED', 'BI_SERVICE_TOKEN is not configured');
-    }
-    const raw = request.headers['x-service-token'];
-    const provided = Array.isArray(raw) ? raw[0] : raw;
-    if (!provided || provided !== expected) {
-      throw new ApiError(401, 'UNAUTHORIZED', 'invalid service token');
-    }
+    requireServiceToken(request);
 
     const parsed = EnsureTenantSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Invalid tenant payload', parsed.error.flatten());

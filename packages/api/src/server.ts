@@ -43,8 +43,9 @@ const PUBLIC_PATHS = new Set([
   '/api/health',
   '/api/auth/login',
   '/api/auth/logout',
-  // Internal provisioning: protected by x-service-token inside the route.
+  // Internal provisioning/status: protected by x-service-token inside the route.
   '/api/internal/tenants/ensure',
+  '/api/internal/tenants/status',
 ]);
 
 // Viewers may still mint read-only tokens and revoke them.

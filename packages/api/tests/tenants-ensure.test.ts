@@ -87,3 +87,37 @@ describe('POST /api/internal/tenants/ensure', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('GET /api/internal/tenants/status', () => {
+  it('returns the tenant for an existing slug', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/internal/tenants/status?slug=${SLUG}`,
+      headers: { 'x-service-token': SERVICE_TOKEN },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tenant).toMatchObject({
+      slug: SLUG,
+      status: 'active',
+      kind: 'tenant',
+    });
+  });
+
+  it('returns null for a missing slug', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/internal/tenants/status?slug=missing-tenant',
+      headers: { 'x-service-token': SERVICE_TOKEN },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tenant).toBeNull();
+  });
+
+  it('rejects a missing service token', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/internal/tenants/status?slug=${SLUG}`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
